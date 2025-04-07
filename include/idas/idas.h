@@ -649,6 +649,23 @@ SUNDIALS_EXPORT int IDAGetAdjDataPointPolynomial(void* ida_mem, int which,
 
 SUNDIALS_EXPORT int IDAGetAdjCurrentCheckPoint(void* ida_mem, void** addr);
 
+/* Undocumented Optional Input Functions */
+
+/* -----------------------------------------------------------------
+ * IDAStoreCheckPoint
+ *    Ensures that a checkpoint is stored at the current solver
+ *    time, by manually adding a checkpoint if the next call to
+ *    IDASolveF will not produce a new checkpoint starting from the
+ *    current solver time. The parameter ckt0 will hold the start
+ *    time of the last checkpoint and the parameter ncheckPtr is the
+ *    total number of checkpoints. Returns IDA_MEM_NULL if ida_mem
+ *    is NULL, IDA_ILL_INPUT of IDASolveF was not previously called,
+ *    and IDA_SUCCESS otherwise.
+ * ----------------------------------------------------------------- */
+
+SUNDIALS_EXPORT int IDAStoreCheckPoint(void* ida_mem, sunrealtype* ckt0,
+                                       int* ncheckPtr);
+
 #ifdef __cplusplus
 }
 #endif

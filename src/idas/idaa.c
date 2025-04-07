@@ -3840,3 +3840,87 @@ static int IDAArhsQ(sunrealtype tt, N_Vector yyB, N_Vector ypB,
   }
   return (retval);
 }
+
+/*=================================================================*/
+/*                Optional Input Functions                         */
+/*=================================================================*/
+
+/*
+ * IDAStoreCheckPoint
+ *
+ * This routine allows the user to manually ensure that a checkpoint
+ * is stored starting at the current time point.
+ */
+
+int IDAStoreCheckPoint(void* ida_mem, sunrealtype* ckt0, int* ncheckPtr)
+{
+  /* Is the mem OK? */
+  if (ida_mem == NULL)
+  {
+    IDAProcessError(NULL, IDA_MEM_NULL, __LINE__, __func__, __FILE__,
+                    MSGAM_NULL_IDAMEM);
+    return IDA_MEM_NULL;
+  }
+  IDAMem IDA_mem = (IDAMem)ida_mem;
+
+  SUNDIALS_MARK_FUNCTION_BEGIN(IDA_PROFILER);
+
+  /* Is ASA initialized ? */
+  if (IDA_mem->ida_adjMallocDone == SUNFALSE)
+  {
+    IDAProcessError(IDA_mem, IDA_NO_ADJ, __LINE__, __func__, __FILE__,
+                    MSGAM_NO_ADJ);
+    SUNDIALS_MARK_FUNCTION_END(IDA_PROFILER);
+    return IDA_NO_ADJ;
+  }
+  IDAadjMem IDAADJ_mem = IDA_mem->ida_adj_mem;
+
+  /* Is IDASolveF called before? */
+  if (IDAADJ_mem->ia_firstIDAFcall)
+  {
+    IDAProcessError(IDA_mem, IDA_ILL_INPUT, __LINE__, __func__, __FILE__,
+                    MSGAM_NO_FWD);
+    SUNDIALS_MARK_FUNCTION_END(IDA_PROFILER);
+    return IDA_ILL_INPUT;
+  }
+
+  /* Input checks done, proceed ... */
+
+  IDAdtpntMem* dt_mem = IDAADJ_mem->dt_mem;
+
+  if (IDAADJ_mem->ck_mem->ck_t0 < IDA_mem->ida_tn)
+  {
+    IDAADJ_mem->ck_mem->ck_t1 = IDA_mem->ida_tn;
+
+    /* Create a new check point, load it, and append it to the list */
+    IDAckpntMem tmp = IDAAckpntNew(IDA_mem);
+    if (tmp == NULL)
+    {
+      SUNDIALS_MARK_FUNCTION_END(IDA_PROFILER);
+      return IDA_MEM_FAIL;
+    }
+
+    tmp->ck_next       = IDAADJ_mem->ck_mem;
+    IDAADJ_mem->ck_mem = tmp;
+    IDAADJ_mem->ia_nckpnts++;
+
+    IDA_mem->ida_forceSetup = SUNTRUE;
+
+    /* Reset i=0 and load dt_mem[0] */
+    dt_mem[0]->t = IDAADJ_mem->ck_mem->ck_t0;
+    IDAADJ_mem->ia_storePnt(IDA_mem, dt_mem[0]);
+  }
+
+  /* Set t1 field of the current check point structure for the case in which
+     there will be no future check points */
+  IDAADJ_mem->ck_mem->ck_t1 = IDA_mem->ida_tn;
+
+  /* Output the time start time of the most recent checkpoint */
+  if (ckt0) { *ckt0 = IDAADJ_mem->ck_mem->ck_t0; }
+
+  /* Get ncheck from IDAADJ_mem */
+  if (ncheckPtr) { *ncheckPtr = IDAADJ_mem->ia_nckpnts; }
+
+  SUNDIALS_MARK_FUNCTION_END(IDA_PROFILER);
+  return IDA_SUCCESS;
+}
