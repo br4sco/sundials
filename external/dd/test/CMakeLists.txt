@@ -1,7 +1,31 @@
 # List of test tuples of the form "name\;args"
 set(unit_tests
-  "dd_test_test\;")
-
+  "dd_alg_test_lexiographical_combination_1_over_1\;"
+  "dd_alg_test_lexiographical_combination_4_over_2\;"
+  "dd_darr_test_create_destroy\;"
+  "dd_darr_push\;"
+  "dd_darr_set_get\;"
+  "dd_matrix_test_dense_create_destroy\;"
+  "dd_matrix_test_dense_create_destroy_workspace\;"
+  "dd_matrix_test_dense_pivot\;"
+  "dd_matrix_test_dense_pivot_example_1_1\;"
+  "dd_matrix_test_dense_pivot_example_1_2\;"
+  "dd_matrix_test_dense_clonesub\;"
+  "dd_matrix_test_dense_copysub\;"
+  "dd_structure_test_create_destroy\;"
+  "dd_structure_test_lotka_volterra\;"
+  "dd_structure_test_pendulum\;"
+  "dd_pivot_test_create_destroy\;"
+  "dd_pivot_test_pendulum_1\;"
+  "dd_pivot_test_pendulum_2\;"
+  "dd_pivot_test_linsys_1\;"
+  "dd_pivot_test_nonlinsys_1\;"
+  "model_lotka-volterra\;"
+  "model_pendulum\;"
+  "model_pendulum_FSA\;"
+  "model_pendulum_FSA\;analytic_sens_residual"
+  "model_pendulum_ASA\;"
+)
 
 # Add the build and install targets for each test
 foreach(test_tuple ${unit_tests})

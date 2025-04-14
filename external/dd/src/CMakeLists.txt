@@ -1,10 +1,18 @@
 install(CODE "MESSAGE(\"\nInstall DD\n\")")
 
+if (MSVC)
+    # warning level 4
+    add_compile_options(/W4)
+else()
+    # additional warnings
+    add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
 include_directories(${CMAKE_SOURCE_DIR}/src)
 
-set(dd_SOURCES dd_chkpt.c)
+set(dd_SOURCES matrix.c structure.c pivot.c dd.c)
 
-set(dd_HEADERS dd_chkpt.h)
+set(dd_HEADERS alg.h darr.h dd_math.h matrix.h structure.h pivot.h dd.h)
 
 sundials_add_library(
   dd
