@@ -41,7 +41,7 @@ int main(int argc, char* argv[])
   /* Allocate state and Jacobian data. */
   SUNMatrix J0 = SUNDenseMatrix(st->st_DAE_N, st->st_DAE_N, ctx);
   TEST_ASSERT(J0);
-  ExtSUNMatrix* jac0 = ExtSUNMatWrapDense(J0);
+  DDMatrix* jac0 = DDMatWrapDense(J0);
   TEST_ASSERT(jac0);
   N_Vector Y = N_VNew_Serial(st->st_N, ctx);
   TEST_ASSERT(Y);
@@ -139,7 +139,7 @@ int main(int argc, char* argv[])
 
   /* Cleanup */
   DDFree(&dd_mem);
-  ExtSUNMatDestroy(jac0);
+  DDMatDestroy(jac0);
   N_VDestroy(Y);
   N_VDestroyVectorArray(YS, PENDULUM_NP);
   STDestroy(st);

@@ -15,18 +15,18 @@ int main(void)
 
   Structure* st = STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, NULL, NULL);
   TEST_ASSERT(st != NULL);
-  ExtSUNMatrix* jac = ExtSUNMatWrapDense(jac_pendulum_create(0));
+  DDMatrix* jac = DDMatWrapDense(jac_pendulum_create(0));
   TEST_ASSERT(jac != NULL);
 
-  PivMem* ps = PMCreate(st, jac);
+  PivMem* ps = PMCreate(CTX, st, jac);
   TEST_ASSERT(ps != NULL);
   PMDestroy(ps);
   ps = NULL;
   PMDestroy(ps);
 
   STDestroy(st);
-  SUNMatDestroy(ExtSUNMatGetMat(jac));
-  ExtSUNMatDestroy(jac);
+  SUNMatDestroy(DDMatGetSUNMat(jac));
+  DDMatDestroy(jac);
 
   return EXIT_SUCCESS;
 }

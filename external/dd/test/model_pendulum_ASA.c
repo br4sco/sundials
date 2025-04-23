@@ -45,7 +45,7 @@ int main(void)
   /* Allocate state and Jacobian data. */
   SUNMatrix J0 = SUNDenseMatrix(st->st_DAE_N, st->st_DAE_N, ctx);
   TEST_ASSERT(J0);
-  ExtSUNMatrix* jac0 = ExtSUNMatWrapDense(J0);
+  DDMatrix* jac0 = DDMatWrapDense(J0);
   TEST_ASSERT(jac0);
   N_Vector Y = N_VNew_Serial(st->st_N, ctx);
   TEST_ASSERT(Y);
@@ -177,10 +177,6 @@ int main(void)
 
     flag = DDSolveB(dd_mem, tret, IDA_NORMAL);
 
-    char* name = DDGetReturnFlagName(flag);
-    printf("flag %s at t = %f\n", name, tret);
-    free(name);
-
     TEST_ASSERT(flag >= 0);
 
     DDGetB(dd_mem, indexB, &tret, yyB, ypB);
@@ -190,7 +186,7 @@ int main(void)
   SUNLinSolFree(LSB);
   SUNMatDestroy(AB);
   DDFree(&dd_mem);
-  ExtSUNMatDestroy(jac0);
+  DDMatDestroy(jac0);
   N_VDestroy(Y);
   N_VDestroy(ypB);
   N_VDestroy(yyB);

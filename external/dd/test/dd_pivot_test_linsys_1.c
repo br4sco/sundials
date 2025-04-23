@@ -15,13 +15,13 @@ int main(void)
 
   Structure* st = STCreate(LINSYS_N, LINSYS_C, LINSYS_D, NULL, NULL);
   TEST_ASSERT(st != NULL);
-  ExtSUNMatrix* jac = ExtSUNMatWrapDense(jac_linsys_create());
+  DDMatrix* jac = DDMatWrapDense(jac_linsys_create());
   TEST_ASSERT(jac != NULL);
-  PivMem* pm = PMCreate(st, jac);
+  PivMem* pm = PMCreate(CTX, st, jac);
   TEST_ASSERT(pm != NULL);
 
-  TEST_ASSERT(PPivot(st, jac, 0, pm));
-  TEST_ASSERT(PPComputeDDSpec(st, pm));
+  TEST_ASSERT(PPivot(st, jac, 0, pm) == SUN_SUCCESS);
+  TEST_ASSERT(PPComputeDDSpec(st, pm) == SUN_SUCCESS);
 
   size_t k              = 0;
   sunbooleantype* known = pm->pm_known[k];
@@ -69,8 +69,8 @@ int main(void)
 
   PMDestroy(pm);
   STDestroy(st);
-  SUNMatDestroy(ExtSUNMatGetMat(jac));
-  ExtSUNMatDestroy(jac);
+  SUNMatDestroy(DDMatGetSUNMat(jac));
+  DDMatDestroy(jac);
 
   return EXIT_SUCCESS;
 }

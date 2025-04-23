@@ -11,32 +11,29 @@ int main(void)
   SUNContext ctx;
   SUNContext_Create(SUN_COMM_NULL, &ctx);
 
-  SUNMatrix mat = SUNDenseMatrix(4, 4, ctx);
-  for (sunindextype i = 0; i < SM_LDATA_D(mat); ++i)
-  {
-    SM_DATA_D(mat)[i] = i + 1;
-  }
-  sunindextype rows[]  = {1, 2, 3};
-  sunindextype cols[]  = {1, 2};
-  ExtSUNMatrix* extmat = ExtSUNMatWrapDense(mat);
-  TEST_ASSERT(extmat != NULL);
+  SUNMatrix A = SUNDenseMatrix(4, 4, ctx);
+  for (sunindextype i = 0; i < SM_LDATA_D(A); ++i) { SM_DATA_D(A)[i] = i + 1; }
+  sunindextype rows[] = {1, 2, 3};
+  sunindextype cols[] = {1, 2};
+  DDMatrix* B         = DDMatWrapDense(A);
+  TEST_ASSERT(B != NULL);
 
-  ExtSUNMatrix* newextmat = ExtSUNMatCloneSub(extmat, 3, rows, 2, cols);
-  TEST_ASSERT(newextmat != NULL);
+  DDMatrix* C = DDMatCloneSub(B, 3, rows, 2, cols);
+  TEST_ASSERT(C != NULL);
 
-  SUNMatrix newmat = ExtSUNMatGetMat(newextmat);
-  TEST_ASSERT(newmat != NULL);
-  TEST_ASSERT(SM_ROWS_D(newmat) == 3);
-  TEST_ASSERT(SM_COLUMNS_D(newmat) == 2);
-  TEST_ASSERT(SM_ELEMENT_D(newmat, 0, 0) == 6);
-  TEST_ASSERT(SM_ELEMENT_D(newmat, 1, 0) == 7);
-  TEST_ASSERT(SM_ELEMENT_D(newmat, 2, 0) == 8);
-  TEST_ASSERT(SM_ELEMENT_D(newmat, 0, 1) == 10);
-  TEST_ASSERT(SM_ELEMENT_D(newmat, 1, 1) == 11);
-  TEST_ASSERT(SM_ELEMENT_D(newmat, 2, 1) == 12);
-  ExtSUNMatDestroy(extmat);
-  ExtSUNMatDestroy(newextmat);
-  SUNMatDestroy(mat);
+  SUNMatrix D = DDMatGetSUNMat(C);
+  TEST_ASSERT(D != NULL);
+  TEST_ASSERT(SM_ROWS_D(D) == 3);
+  TEST_ASSERT(SM_COLUMNS_D(D) == 2);
+  TEST_ASSERT(SM_ELEMENT_D(D, 0, 0) == 6);
+  TEST_ASSERT(SM_ELEMENT_D(D, 1, 0) == 7);
+  TEST_ASSERT(SM_ELEMENT_D(D, 2, 0) == 8);
+  TEST_ASSERT(SM_ELEMENT_D(D, 0, 1) == 10);
+  TEST_ASSERT(SM_ELEMENT_D(D, 1, 1) == 11);
+  TEST_ASSERT(SM_ELEMENT_D(D, 2, 1) == 12);
+  DDMatDestroy(B);
+  DDMatDestroy(C);
+  SUNMatDestroy(A);
 
   return EXIT_SUCCESS;
 }

@@ -17,12 +17,6 @@
 
 /* return values */
 
-/** @brief Performed a successful DD pivot. */
-#define DD_PIVOT_SUCCESS 3
-
-/** @brief Failed a DD pivot.  */
-#define DD_PIVOT_FAIL -200
-
 /** @brief Generic DD error. */
 #define DD_GENERIC_ERROR -300
 
@@ -35,7 +29,7 @@ typedef int DDResFn(sunrealtype, N_Vector, N_Vector, void*);
 
 /** @brief Jacobian callback function for highest order derivatives (both
     equations and variables). */
-typedef int DDJacFn0(sunrealtype, N_Vector, ExtSUNMatrix[static 1], void*);
+typedef int DDJacFn0(sunrealtype, N_Vector, DDMatrix[static 1], void*);
 
 /** @brief Jacobian callback function for `DDResFn`. */
 typedef int DDLsJacFn(sunrealtype, N_Vector, N_Vector, SUNMatrix, void*,
@@ -64,7 +58,7 @@ void DDFree(DDMem*);
 
 /** @brief Initializes a solver session. */
 int DDInit(DDMem, Structure[static 1], sunrealtype, DDJacFn0,
-           ExtSUNMatrix[static 1], DDResFn, sunrealtype, N_Vector);
+           DDMatrix[static 1], DDResFn, sunrealtype, N_Vector);
 
 /** @brief Re-initializes a solver session. */
 int DDReInit(DDMem, sunrealtype, N_Vector);

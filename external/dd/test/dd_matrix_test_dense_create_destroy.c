@@ -11,14 +11,14 @@ int main(void)
   SUNContext ctx;
   SUNContext_Create(SUN_COMM_NULL, &ctx);
 
-  SUNMatrix mat        = SUNDenseMatrix(3, 2, ctx);
-  ExtSUNMatrix* extmat = ExtSUNMatWrapDense(mat);
+  SUNMatrix A = SUNDenseMatrix(3, 2, ctx);
+  DDMatrix* B = DDMatWrapDense(A);
 
-  TEST_ASSERT(extmat != NULL);
-  ExtSUNMatDestroy(extmat);
-  extmat = NULL;
-  ExtSUNMatDestroy(extmat);
-  SUNMatDestroy(mat);
+  TEST_ASSERT(B != NULL);
+  DDMatDestroy(B);
+  B = NULL;
+  DDMatDestroy(B);
+  SUNMatDestroy(A);
 
   return EXIT_SUCCESS;
 }

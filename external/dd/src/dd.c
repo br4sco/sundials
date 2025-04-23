@@ -4,19 +4,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sundials/priv/sundials_errors_impl.h>
 #include <sundials/sundials_core.h>
 #include <sundials/sundials_macros.h>
 #include <sundials/sundials_math.h>
 
 #include "darr.h"
 #include "dd.h"
+#include "dd_err.h"
 #include "idas/idas_impl.h"
-#include "idas/idas_ls.h"
 #include "matrix.h"
 #include "pivot.h"
 #include "structure.h"
-#include "sundials/sundials_matrix.h"
-#include "sundials/sundials_nvector.h"
 #include "sundials/sundials_types.h"
 
 /* ==========================================================================
@@ -55,7 +54,7 @@ static void DDckpntDestroy(DDckpntMem* ck_mem_ptr)
     }
 
     /* NOTE(oerikss, 2025-04-15): We delegage deleting IDA checkpoints to
-        `IDAAdjFree` in `DDAdjFree`. */
+         `IDAAdjFree` in `DDAdjFree`. */
 
     free(ck);
     *ck_mem_ptr = NULL;
@@ -114,6 +113,8 @@ DD_DEFINE_DYNARR(ProbB, ProbB)
 
 struct DDMemRec
 {
+  SUNContext sunctx;
+
   /* DAE Structure and Pivoting */
 
   Structure* dd_st;
@@ -121,7 +122,7 @@ struct DDMemRec
   sunrealtype dd_pivot_tol;
   uint8_t* dd_prev_spec;
   DDJacFn0* dd_jacf0;
-  ExtSUNMatrix* dd_J0;
+  DDMatrix* dd_J0;
 
   /* IDA Memory */
 
@@ -248,13 +249,24 @@ static void DDSetId(const Structure[static 1], const PivMem[static 1], N_Vector)
  * DDCreate
  * -------------------------------------------------------------------------- */
 
-DDMem DDCreate(SUNContext ctx)
-{
-  DDMem dd_mem = malloc(sizeof(*dd_mem));
-  if (dd_mem == NULL) return NULL;
+DDMem DDCreate(SUNContext sunctx)
 
-  dd_mem->ida_mem = IDACreate(ctx);
-  if (dd_mem->ida_mem == NULL) return NULL;
+{
+  if (sunctx == NULL)
+  {
+    DDHandleErr(DD_ERR_NULL_SUNCTX, NULL);
+    return NULL;
+  }
+
+  DDFunctionBegin(sunctx);
+
+  DDMem dd_mem = malloc(sizeof(*dd_mem));
+  DDCheckNull(dd_mem != NULL, DD_ERR_MALLOC_FAIL);
+
+  dd_mem->ida_mem = IDACreate(sunctx);
+  DDCheckNull(dd_mem->ida_mem != NULL, DD_ERR_MEM_FAIL);
+
+  dd_mem->sunctx = sunctx;
 
   dd_mem->dd_st        = NULL;
   dd_mem->dd_pm        = NULL;
@@ -342,58 +354,65 @@ void DDFree(DDMem* dd_mem_ptr)
  * -------------------------------------------------------------------------- */
 
 int DDInit(DDMem dd_mem, Structure st[static 1], sunrealtype ptol, DDJacFn0 jacf0,
-           ExtSUNMatrix J0[static 1], DDResFn res, sunrealtype t0, N_Vector Y0)
+           DDMatrix J0[static 1], DDResFn res, sunrealtype t0, N_Vector Y0)
 {
-  if ((dd_mem == NULL) || (res == NULL) || (jacf0 == NULL))
+  if (dd_mem == NULL)
   {
-    return DD_GENERIC_ERROR;
+    DDHandleErr(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_DD_MEM_NULL;
   }
+
+  SUNContext sunctx = dd_mem->sunctx;
+
+  DDFunctionBegin(sunctx);
+
+  DDCheck(res != NULL, DD_ERR_ARG_CORRUPT);
+  DDCheck(jacf0 != NULL, DD_ERR_ARG_CORRUPT);
 
   dd_mem->dd_st        = st;
   dd_mem->dd_pivot_tol = ptol;
   dd_mem->dd_t0        = t0;
 
-  PivMem* pm = PMCreate(st, J0);
-  if (pm == NULL) { return DD_GENERIC_ERROR; }
+  PivMem* pm = PMCreate(sunctx, st, J0);
+  DDCheck(pm != NULL, DD_ERR_MEM_FAIL);
   dd_mem->dd_pm = pm;
 
   uint8_t* prev_spec = malloc(st->st_DAE_N * sizeof(*prev_spec));
-  if (prev_spec == NULL) { return DD_GENERIC_ERROR; }
+  DDCheck(prev_spec != NULL, DD_ERR_MALLOC_FAIL);
   dd_mem->dd_prev_spec = prev_spec;
 
   dd_mem->dd_jacf0 = jacf0;
   dd_mem->dd_J0    = J0;
   dd_mem->dd_res   = res;
 
-  if (!PPivot(st, J0, ptol, pm) || !PPComputeDDSpec(st, pm))
-  {
-    return DD_GENERIC_ERROR;
-  }
+  DDCheck(PPivot(st, J0, ptol, pm) == SUN_SUCCESS, DD_ERR_OP_FAIL);
+  DDCheck(PPComputeDDSpec(st, pm) == SUN_SUCCESS, DD_ERR_OP_FAIL);
 
   memcpy(prev_spec, pm->pm_spec, st->st_DAE_N * sizeof(uint8_t));
 
   dd_mem->dd_yy = N_VClone(Y0);
-  if (dd_mem->dd_yy == NULL) { return DD_GENERIC_ERROR; }
+  DDCheck(dd_mem->dd_yy != NULL, DD_ERR_MEM_FAIL);
 
   dd_mem->dd_yp = N_VClone(Y0);
-  if (dd_mem->dd_yp == NULL) { return DD_GENERIC_ERROR; }
+  DDCheck(dd_mem->dd_yp != NULL, DD_ERR_MEM_FAIL);
 
   DDSetYpFromY(st, pm, Y0, dd_mem->dd_yp);
 
-  int flag = IDAInit(dd_mem->ida_mem, DDResWrapper, t0, Y0, dd_mem->dd_yp);
-  if (flag < 0) { return flag; }
+  DDCheck(IDAInit(dd_mem->ida_mem, DDResWrapper, t0, Y0, dd_mem->dd_yp) ==
+            IDA_SUCCESS,
+          DD_ERR_IDA_ERR);
 
   dd_mem->dd_id = N_VClone(Y0);
-  if (dd_mem->dd_id == NULL) { return DD_GENERIC_ERROR; }
+  DDCheck(dd_mem->dd_id != NULL, DD_ERR_MEM_FAIL);
 
   DDSetId(st, pm, dd_mem->dd_id);
 
-  flag = IDASetId(dd_mem->ida_mem, dd_mem->dd_id);
-  if (flag < 0) { return flag; }
+  DDCheck(IDASetId(dd_mem->ida_mem, dd_mem->dd_id) == IDA_SUCCESS,
+          DD_ERR_IDA_ERR);
 
-  flag = IDASetUserData(dd_mem->ida_mem, dd_mem);
+  DDCheck(IDASetUserData(dd_mem->ida_mem, dd_mem) == IDA_SUCCESS, DD_ERR_IDA_ERR);
 
-  return flag;
+  return DD_SUCCESS;
 }
 
 static int DDResWrapper(sunrealtype t, N_Vector yy, N_Vector yp,
@@ -484,7 +503,7 @@ int DDReInit(DDMem dd_mem, sunrealtype t0, N_Vector Y0)
 int DDSolve(DDMem dd_mem, sunrealtype tout, sunrealtype tret[static 1],
             N_Vector Y, int itask)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   IDAMem ida_mem = dd_mem->ida_mem;
   return IDASolve(ida_mem, tout, tret, Y, dd_mem->dd_yp, itask);
@@ -496,7 +515,11 @@ int DDSolve(DDMem dd_mem, sunrealtype tout, sunrealtype tret[static 1],
 
 PivotResult DDPivot(DDMem dd_mem)
 {
-  if (dd_mem == NULL) { return PIVOT_FAIL; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErr(DD_ERR_DD_MEM_NULL, NULL);
+    return PIVOT_FAIL;
+  }
 
   const Structure* st = dd_mem->dd_st;
   PivMem* pm          = dd_mem->dd_pm;
@@ -506,7 +529,7 @@ PivotResult DDPivot(DDMem dd_mem)
   IDAMem ida_mem = dd_mem->ida_mem;
 
   N_Vector yy = dd_mem->dd_yy, yp = dd_mem->dd_yp;
-  ExtSUNMatrix* J0 = dd_mem->dd_J0;
+  DDMatrix* J0 = dd_mem->dd_J0;
 
   const sunrealtype tn = ida_mem->ida_tn;
 
@@ -517,7 +540,8 @@ PivotResult DDPivot(DDMem dd_mem)
     return PIVOT_FAIL;
   }
 
-  if (!PPivot(st, J0, dd_mem->dd_pivot_tol, pm) || !PPComputeDDSpec(st, pm))
+  if ((PPivot(st, J0, dd_mem->dd_pivot_tol, pm) < 0) ||
+      (PPComputeDDSpec(st, pm) < 0))
   {
     return PIVOT_FAIL;
   }
@@ -570,7 +594,7 @@ PivotResult DDPivot(DDMem dd_mem)
       ck_next->ida_ck_mem = ida_adj_mem->ck_mem;
 
       DDckpntMem ck_mem = DDckpntCreate(tn, pm->pm_DAE_N, pm->pm_spec);
-      if (!ck_mem) { return PIVOT_FAIL; }
+      if (ck_mem == NULL) { return PIVOT_FAIL; }
 
       ck_mem->ck_next = ck_next;
       dd_mem->ck_mem  = ck_mem;
@@ -632,17 +656,17 @@ void DDSensFree(DDMem dd_mem)
 int DDSensInit(DDMem dd_mem, int Ns, int ism, DDSensResFn resfnS,
                N_Vector YS0[static Ns])
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   N_Vector* yS = N_VCloneVectorArray(Ns, YS0[0]);
-  if (yS == NULL) { return DD_GENERIC_ERROR; }
+  if (yS == NULL) { return DD_ERR_UNKNOWN; }
   dd_mem->dd_yyS = yS;
 
   N_Vector* ypS = N_VCloneVectorArray(Ns, YS0[0]);
   if (ypS == NULL)
   {
     DDSensFree(dd_mem);
-    return DD_GENERIC_ERROR;
+    return DD_ERR_UNKNOWN;
   }
   dd_mem->dd_ypS = ypS;
 
@@ -706,7 +730,7 @@ static int DDResSWrapper(int Ns, sunrealtype t, N_Vector yy,
 
 int DDSensReInit(DDMem dd_mem, int ism, N_Vector* YS0)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   IDAMem ida_mem = dd_mem->ida_mem;
   N_Vector* ypS  = dd_mem->dd_ypS;
@@ -726,7 +750,7 @@ int DDSensReInit(DDMem dd_mem, int ism, N_Vector* YS0)
 int DDSolveF(DDMem dd_mem, sunrealtype tout, sunrealtype tret[static 1],
              N_Vector Y, int itask, int ncheck[static 1])
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   IDAMem ida_mem = dd_mem->ida_mem;
   N_Vector yp    = dd_mem->dd_yp;
@@ -753,7 +777,7 @@ int DDSolveF(DDMem dd_mem, sunrealtype tout, sunrealtype tret[static 1],
 
 int DDCalcIC(DDMem dd_mem, int iocopt, sunrealtype tout1)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   return IDACalcIC(dd_mem->ida_mem, iocopt, tout1);
 }
@@ -764,7 +788,7 @@ int DDCalcIC(DDMem dd_mem, int iocopt, sunrealtype tout1)
 
 int DDAdjInit(DDMem dd_mem, long Nd, int interpType)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   IDAMem ida_mem = dd_mem->ida_mem;
 
@@ -776,7 +800,7 @@ int DDAdjInit(DDMem dd_mem, long Nd, int interpType)
   if (dd_mem->dd_probBs == NULL)
   {
     DDAdjFree(dd_mem);
-    return DD_GENERIC_ERROR;
+    return DD_ERR_UNKNOWN;
   }
 
   PivMem* pm     = dd_mem->dd_pm;
@@ -784,7 +808,7 @@ int DDAdjInit(DDMem dd_mem, long Nd, int interpType)
   if (dd_mem->ck_mem == NULL)
   {
     DDAdjFree(dd_mem);
-    return DD_GENERIC_ERROR;
+    return DD_ERR_UNKNOWN;
   }
 
   dd_mem->dd_tinitial = ida_mem->ida_tn;
@@ -812,19 +836,44 @@ void DDAdjFree(DDMem dd_mem)
      Adjoint memory before calling `IDAAdjFree` to make sure that they are
      all free'ed. */
 
-  IDAMem ida_mem    = dd_mem->ida_mem;
-  DDckpntMem ck_mem = dd_mem->ck_mem;
+  IDAMem ida_mem = dd_mem->ida_mem;
 
-  if (ck_mem != NULL)
+  if (ida_mem->ida_adj)
   {
-    IDAckpntMem ida_ck_mem = ck_mem->ida_ck_mem;
-    while (ck_mem != NULL)
+    /* Link IDA checkpoints in each DD checkpoint. */
+
+    for (DDckpntMem ck = dd_mem->ck_mem; ck->ck_next != NULL; ck = ck->ck_next)
     {
-      while (ida_ck_mem != NULL) { ida_ck_mem = ida_ck_mem->ck_next; }
-      ida_ck_mem = ck_mem->ida_ck_mem;
-      ck_mem     = ck_mem->ck_next;
+      IDAckpntMem ida_ck = ck->ida_ck_mem;
+
+      /* ida_ck is set to non-NULL only on a pivot so the last DD checkpoint
+         will have NULL in this field. */
+
+      if (ida_ck != NULL)
+      {
+        while (ida_ck->ck_next != NULL) { ida_ck = ida_ck->ck_next; }
+        ida_ck->ck_next = ck->ck_next->ida_ck_mem;
+      }
     }
-    ida_mem->ida_adj_mem->ck_mem = dd_mem->ck_mem->ida_ck_mem;
+
+    /* Attach these IDA checkpoints to the end of the checkpoints in the IDA
+       adjoint memory. */
+
+    DDckpntMem ck_mem     = dd_mem->ck_mem;
+    IDAadjMem ida_adj_mem = ida_mem->ida_adj_mem;
+
+    if (ida_adj_mem->ck_mem == NULL)
+    {
+      ida_adj_mem->ck_mem = ck_mem->ida_ck_mem;
+    }
+    else
+    {
+      IDAckpntMem ck = ida_adj_mem->ck_mem;
+
+      while (ck->ck_next != NULL) { ck = ck->ck_next; }
+
+      ck->ck_next = ck_mem->ida_ck_mem;
+    }
 
     IDAAdjFree(&ida_mem);
   }
@@ -840,7 +889,7 @@ void DDAdjFree(DDMem dd_mem)
 
 int DDCreateB(DDMem dd_mem, int which[static 1])
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   return IDACreateB(dd_mem->ida_mem, which);
 }
@@ -852,7 +901,7 @@ int DDCreateB(DDMem dd_mem, int which[static 1])
 int DDInitB(DDMem dd_mem, int which, DDResFnB resB, sunrealtype tB0,
             N_Vector yyB0, N_Vector ypB0)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   IDAMem ida_mem = dd_mem->ida_mem;
 
@@ -869,7 +918,7 @@ int DDInitB(DDMem dd_mem, int which, DDResFnB resB, sunrealtype tB0,
   ProbB pb = {.pb_which = which};
 
   pb.pb_data = malloc(sizeof(*pb.pb_data));
-  if (!pb.pb_data) { return DD_GENERIC_ERROR; }
+  if (!pb.pb_data) { return DD_ERR_UNKNOWN; }
 
   pb.pb_data->db_resB      = resB;
   pb.pb_data->db_user_data = NULL;
@@ -885,7 +934,7 @@ int DDInitB(DDMem dd_mem, int which, DDResFnB resB, sunrealtype tB0,
       !DynArrPushBack_ProbB(dd_mem->dd_probBs, pb))
   {
     ProbBDestroy(pb);
-    return DD_GENERIC_ERROR;
+    return DD_ERR_UNKNOWN;
   }
 
   /* We re-init the IDA adjoint problem at each pivot, which changes
@@ -915,7 +964,7 @@ static int DDResBWrapper(sunrealtype t, N_Vector yy,
 
 int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   IDAMem ida_mem        = dd_mem->ida_mem;
   IDAadjMem ida_adj_mem = ida_mem->ida_adj_mem;
@@ -933,16 +982,15 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
   /* This code is code from `IDASolveB` re-purposed to find the first relevant
      DD checkpoint. */
 
-  sunbooleantype got_ckpnt = SUNFALSE;
+  DDckpntMem ck_mem = NULL;
 
-  DDckpntMem ck_mem = dd_mem->ck_mem_cur;
-  while (ck_mem != NULL && !got_ckpnt)
+  for (ck_mem = dd_mem->ck_mem_cur; ck_mem != NULL; ck_mem = ck_mem->ck_next)
   {
-    IDABMem IDAB_mem = ida_mem->ida_adj_mem->IDAB_mem;
+    sunbooleantype got_ckpnt = SUNFALSE;
 
-    while (IDAB_mem != NULL)
+    for (IDABMem b = ida_adj_mem->IDAB_mem; b != NULL; b = b->ida_next)
     {
-      sunrealtype tBn = IDAB_mem->IDA_mem->ida_tn;
+      sunrealtype tBn = b->IDA_mem->ida_tn;
 
       if (sign * (ck_mem->ck_t0 - tBn) < ZERO)
       {
@@ -956,14 +1004,14 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
         got_ckpnt = SUNTRUE;
         break;
       }
-
-      ck_mem = ck_mem->ck_next;
     }
 
-    IDAB_mem = IDAB_mem->ida_next;
+    if (got_ckpnt) { break; }
   }
 
-  int flag = DD_GENERIC_ERROR;
+  assert(ck_mem);
+
+  int flag = DD_ERR_UNKNOWN;
 
   while (SUNTRUE)
   {
@@ -971,9 +1019,9 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
 
     if (ck_mem != dd_mem->ck_mem_cur)
     {
-      if (!PPUpdateDDSpec(ck_mem->ck_spec, dd_mem->dd_pm))
+      if (PPUpdateDDSpec(ck_mem->ck_spec, dd_mem->dd_pm) < 0)
       {
-        flag = DD_GENERIC_ERROR;
+        flag = DD_ERR_UNKNOWN;
         break;
       }
 
@@ -986,7 +1034,7 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
       /* Set the IDA checkpoints to the IDA checkpoints associated with this
          particular DD checkpoint. */
 
-      ida_mem->ida_adj_mem->ck_mem = ck_mem->ida_ck_mem;
+      ida_adj_mem->ck_mem = ck_mem->ida_ck_mem;
 
       dd_mem->ck_mem_cur = ck_mem;
     }
@@ -1031,7 +1079,7 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
 
 int DDCalcICB(DDMem dd_mem, int which, sunrealtype tBout1, N_Vector Y)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   return IDACalcICB(dd_mem->ida_mem, which, tBout1, Y,
                     /* Not used by the residual function. */ Y);
@@ -1043,7 +1091,7 @@ int DDCalcICB(DDMem dd_mem, int which, sunrealtype tBout1, N_Vector Y)
 
 /* int DDSetJacFn(DDMem dd_mem, DDLsJacFn jacf) */
 /* { */
-/*   if (dd_mem == NULL) { return DD_GENERIC_ERROR; } */
+/*   if (dd_mem == NULL) { return DD_ERR_UNKNOWN; } */
 
 /*   int flag = IDASetJacFn(dd_mem->ida_mem, DDLsJacFnWrapper); */
 /*   if (flag < 0) { return flag; } */
@@ -1102,28 +1150,28 @@ void* DDGetIDAMem(DDMem dd_mem)
 
 int DDSetLinearSolver(DDMem dd_mem, SUNLinearSolver LS, SUNMatrix A)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   return IDASetLinearSolver(dd_mem->ida_mem, LS, A);
 }
 
 int DDSSTolerances(DDMem dd_mem, sunrealtype reltol, sunrealtype abstol)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   return IDASStolerances(dd_mem->ida_mem, reltol, abstol);
 }
 
 int DDSetStopTime(DDMem dd_mem, sunrealtype tstop)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   return IDASetStopTime(dd_mem->ida_mem, tstop);
 }
 
 int DDSetUserData(DDMem dd_mem, void* user_data)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   dd_mem->dd_user_data = user_data;
   return IDA_SUCCESS;
@@ -1131,55 +1179,60 @@ int DDSetUserData(DDMem dd_mem, void* user_data)
 
 int DDGetSens(DDMem dd_mem, sunrealtype* tret, N_Vector* YS)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   return IDAGetSens(dd_mem->ida_mem, tret, YS);
 }
 
 char* DDGetReturnFlagName(long int flag)
 {
-  char* name = malloc(24 * sizeof(char));
+#define DD_ERR_EXPAND_TO_CASE(name, description) \
+  case name: sprintf(buf, "name"); break;
+
+  char* buf = malloc(24 * sizeof(*buf));
+
+  /* clang-format off */
   switch (flag)
   {
-  case DD_PIVOT_SUCCESS: sprintf(name, "DD_PIVOT_SUCCESS"); break;
-  case DD_PIVOT_FAIL: sprintf(name, "DD_PIVOT_FAIL"); break;
-  case DD_GENERIC_ERROR: sprintf(name, "DD_GENERIC_ERROR"); break;
-  default: free(name); return IDAGetReturnFlagName(flag);
+    DD_ERR_CODE_LIST(DD_ERR_EXPAND_TO_CASE)
+    default: free(buf); return IDAGetReturnFlagName(flag);
   }
-  return name;
+
+  /* clang-format on */
+  return buf;
 }
 
 int DDGetConsistentIC(DDMem dd_mem, N_Vector Y)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   return IDAGetConsistentIC(dd_mem->ida_mem, Y, NULL);
 }
 
 int DDGetSensConsistentIC(DDMem dd_mem, N_Vector* YS)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   return IDAGetSensConsistentIC(dd_mem->ida_mem, YS, NULL);
 }
 
 int DDSetSensParams(DDMem dd_mem, sunrealtype* p, sunrealtype* pbar, int* plist)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   return IDASetSensParams(dd_mem->ida_mem, p, pbar, plist);
 }
 
 int DDSensEEtolerances(DDMem dd_mem)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   return IDASensEEtolerances(dd_mem->ida_mem);
 }
 
 int DDSetLinearSolverB(DDMem dd_mem, int which, SUNLinearSolver LS, SUNMatrix A)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   return IDASetLinearSolverB(dd_mem->ida_mem, which, LS, A);
 }
@@ -1187,14 +1240,14 @@ int DDSetLinearSolverB(DDMem dd_mem, int which, SUNLinearSolver LS, SUNMatrix A)
 int DDSStolerancesB(DDMem dd_mem, int which, sunrealtype reltolB,
                     sunrealtype abstolB)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   return IDASStolerancesB(dd_mem->ida_mem, which, reltolB, abstolB);
 }
 
 int DDSetUserDataB(DDMem dd_mem, int which, void* user_dataB)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   DynArr_ProbB* pbs = dd_mem->dd_probBs;
 
@@ -1214,7 +1267,7 @@ int DDSetUserDataB(DDMem dd_mem, int which, void* user_dataB)
 
 int DDSetIdB(DDMem dd_mem, int which, N_Vector idB)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   return IDASetIdB(dd_mem->ida_mem, which, idB);
 }
@@ -1222,14 +1275,14 @@ int DDSetIdB(DDMem dd_mem, int which, N_Vector idB)
 int DDGetB(DDMem dd_mem, int which, sunrealtype tret[static 1], N_Vector yyB,
            N_Vector ypB)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   return IDAGetB(dd_mem->ida_mem, which, tret, yyB, ypB);
 }
 
 int DDGetConsistentICB(DDMem dd_mem, int which, N_Vector yyB0, N_Vector ypB0)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
 
   return IDAGetConsistentICB(dd_mem->ida_mem, which, yyB0, ypB0);
 }

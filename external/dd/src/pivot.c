@@ -1,18 +1,23 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sundials/priv/sundials_errors_impl.h>
 #include <sundials/sundials_matrix.h>
 #include <sunmatrix/sunmatrix_dense.h>
 
 #include "matrix.h"
 #include "pivot.h"
 #include "structure.h"
-#include "sundials/sundials_types.h"
 
-PivMem* PMCreate(const Structure st[static 1], const ExtSUNMatrix mat[static 1])
+PivMem* PMCreate(SUNContext sunctx, const Structure st[static 1],
+                 const DDMatrix A[static 1])
 {
+  SUNFunctionBegin(sunctx);
+
   PivMem* pm = malloc(sizeof(*pm));
-  if (pm == NULL) return NULL;
+  SUNAssertNull(pm, SUN_ERR_MALLOC_FAIL);
+
+  pm->sunctx = sunctx;
 
   const sunindextype N = st->st_DAE_N;
   const uint8_t K      = st->st_K;
@@ -21,61 +26,29 @@ PivMem* PMCreate(const Structure st[static 1], const ExtSUNMatrix mat[static 1])
   pm->pm_K     = K;
 
   pm->pm_spec = calloc(N, sizeof(uint8_t));
-  if (pm->pm_spec == NULL)
-  {
-    PMDestroy(pm);
-    return NULL;
-  }
+  SUNAssertNull(pm->pm_spec, SUN_ERR_MALLOC_FAIL);
 
   pm->pm_NNZ_spec = 0;
   pm->pm_NZ_spec  = malloc(N * sizeof(sunindextype));
-  if (pm->pm_NZ_spec == NULL)
-  {
-    PMDestroy(pm);
-    return NULL;
-  }
+  SUNAssertNull(pm->pm_NZ_spec, SUN_ERR_MALLOC_FAIL);
 
   pm->pm_known = malloc(K * sizeof(sunbooleantype*));
-  if (pm->pm_known == NULL)
-  {
-    PMDestroy(pm);
-    return NULL;
-  }
+  SUNAssertNull(pm->pm_known, SUN_ERR_MALLOC_FAIL);
 
   pm->pm_vars = malloc(K * sizeof(sunindextype*));
-  if (pm->pm_vars == NULL)
-  {
-    PMDestroy(pm);
-    return NULL;
-  }
+  SUNAssertNull(pm->pm_vars, SUN_ERR_MALLOC_FAIL);
 
-  pm->pm_jacs = malloc(K * sizeof(ExtSUNMatrix*));
-  if (pm->pm_jacs == NULL)
-  {
-    PMDestroy(pm);
-    return NULL;
-  }
+  pm->pm_jacs = malloc(K * sizeof(DDMatrix*));
+  SUNAssertNull(pm->pm_jacs, SUN_ERR_MALLOC_FAIL);
 
-  pm->pm_wss = malloc(K * sizeof(ExtSUNMatrixWS*));
-  if (pm->pm_wss == NULL)
-  {
-    PMDestroy(pm);
-    return NULL;
-  }
+  pm->pm_wss = malloc(K * sizeof(DDMatrixWorkspace*));
+  SUNAssertNull(pm->pm_wss, SUN_ERR_MALLOC_FAIL);
 
   pm->pm_knowndata = calloc(K * N, sizeof(sunbooleantype));
-  if (pm->pm_knowndata == NULL)
-  {
-    PMDestroy(pm);
-    return NULL;
-  }
+  SUNAssertNull(pm->pm_knowndata, SUN_ERR_MALLOC_FAIL);
 
   pm->pm_varsdata = calloc(st->st_N, sizeof(sunindextype));
-  if (pm->pm_varsdata == NULL)
-  {
-    PMDestroy(pm);
-    return NULL;
-  }
+  SUNAssertNull(pm->pm_varsdata, SUN_ERR_MALLOC_FAIL);
 
   sunindextype ofs = 0;
   for (uint8_t k = 0; k < K; ++k)
@@ -85,7 +58,8 @@ PivMem* PMCreate(const Structure st[static 1], const ExtSUNMatrix mat[static 1])
     const sunindextype* I = st->st_eqns[k];
     const sunindextype* J = st->st_vars[k];
 
-    assert(Nk > 0);
+    SUNAssertNull(Nk > 0, SUN_ERR_OP_FAIL);
+
     if (Mk == 0)
     {
       pm->pm_jacs[k] = NULL;
@@ -93,20 +67,12 @@ PivMem* PMCreate(const Structure st[static 1], const ExtSUNMatrix mat[static 1])
     }
     else
     {
-      ExtSUNMatrix* submat = ExtSUNMatCloneSub(mat, Mk, I, Nk, J);
-      if (submat == NULL)
-      {
-        PMDestroy(pm);
-        return NULL;
-      }
-      pm->pm_jacs[k] = submat;
+      DDMatrix* A_sub = DDMatCloneSub(A, Mk, I, Nk, J);
+      SUNCheckLastErrNull();
+      pm->pm_jacs[k] = A_sub;
 
-      ExtSUNMatrixWS* ws = ExtSUNMatCreateWS(submat);
-      if (ws == NULL)
-      {
-        PMDestroy(pm);
-        return NULL;
-      }
+      DDMatrixWorkspace* ws = DDMatCreateWS(A_sub);
+      SUNCheckLastErrNull();
       pm->pm_wss[k] = ws;
     }
 
@@ -154,11 +120,11 @@ void PMDestroy(PivMem* pm)
   {
     for (size_t k = 0; k < K; ++k)
     {
-      ExtSUNMatrix* submat = pm->pm_jacs[k];
+      DDMatrix* submat = pm->pm_jacs[k];
       if (submat)
       {
-        SUNMatDestroy(ExtSUNMatGetMat(submat));
-        ExtSUNMatDestroy(submat);
+        SUNMatDestroy(DDMatGetSUNMat(submat));
+        DDMatDestroy(submat);
       }
       pm->pm_jacs[k] = NULL;
     }
@@ -170,7 +136,7 @@ void PMDestroy(PivMem* pm)
   {
     for (size_t k = 0; k < K; ++k)
     {
-      ExtSUNMatWSDestroy(pm->pm_wss[k]);
+      DDMatWSDestroy(pm->pm_wss[k]);
       pm->pm_wss[k] = NULL;
     }
     free(pm->pm_wss);
@@ -192,7 +158,7 @@ void PMDestroy(PivMem* pm)
   free(pm);
 }
 
-static sunbooleantype PDReset(const PivMem pm[static 1])
+static SUNErrCode PDReset(const PivMem pm[static 1])
 {
   const sunindextype N = pm->pm_DAE_N;
   const uint8_t K      = pm->pm_K;
@@ -200,21 +166,22 @@ static sunbooleantype PDReset(const PivMem pm[static 1])
   memset(pm->pm_spec, 0, N * sizeof(*pm->pm_spec));
   memset(pm->pm_knowndata, SUNFALSE, N * K * sizeof(*pm->pm_knowndata));
 
-  return SUNTRUE;
+  return SUN_SUCCESS;
 }
 
-sunbooleantype PPivot(const Structure st[static 1],
-                      const ExtSUNMatrix mat[static 1], sunrealtype tol,
-                      const PivMem pm[static 1])
+SUNErrCode PPivot(const Structure st[static 1], const DDMatrix A[static 1],
+                  sunrealtype tol, const PivMem pm[static 1])
 {
-  PDReset(pm);
+  SUNFunctionBegin(pm->sunctx);
+
+  SUNCheckCall(PDReset(pm));
 
   for (uint8_t k = 0; k < st->st_K; ++k)
   {
     const sunindextype Mk = st->st_Mk[k];
     const sunindextype Nk = st->st_Nk[k];
 
-    assert(Nk > 0);
+    SUNAssert(Nk > 0, SUN_ERR_OP_FAIL);
 
     const sunindextype* vars = st->st_vars[k];
     sunindextype* pm_vars    = pm->pm_vars[k];
@@ -240,34 +207,31 @@ sunbooleantype PPivot(const Structure st[static 1],
         if (varofs[vars[l]] == 0) { pm_known[vars[l]] = SUNTRUE; }
       }
 
-      const ExtSUNMatrix* submat = pm->pm_jacs[k];
-      if (!ExtSUNMatCopySub(mat, submat, Mk, eqns, Nk, vars))
-      {
-        return SUNFALSE;
-      }
+      const DDMatrix* submat = pm->pm_jacs[k];
+      SUNCheckCall(DDCopySub(A, submat, Mk, eqns, Nk, vars));
 
-      const ExtSUNMatrixWS* ws = pm->pm_wss[k];
-      if (!ExtSUNMatPivot(submat, ws, tol, Nk, pm_vars)) { return SUNFALSE; }
+      const DDMatrixWorkspace* ws = pm->pm_wss[k];
+      SUNCheckCall(DDMatPivot(submat, ws, tol, Nk, pm_vars));
 
       for (sunindextype l = 0; l < Mk; ++l) { pm_known[pm_vars[l]] = SUNTRUE; }
     }
   }
 
-  return SUNTRUE;
+  return SUN_SUCCESS;
 }
 
-void PSPrintSubmat(const Structure st[static 1], const PivMem pm[static 1],
-                   uint8_t k, FILE* file)
-{
-  for (sunindextype i = 0; i < st->st_Nk[k]; ++i)
-  {
-    sunindextype j = pm->pm_vars[k][i];
-    fprintf(file, "\td%d%s", ST_VAR_ORDER(st, k, j), ST_VAR_NAME(st, j));
-  }
+/* void PSPrintSubmat(const Structure st[static 1], const PivMem pm[static 1], */
+/*                    uint8_t k, FILE* file) */
+/* { */
+/*   for (sunindextype i = 0; i < st->st_Nk[k]; ++i) */
+/*   { */
+/*     sunindextype j = pm->pm_vars[k][i]; */
+/*     fprintf(file, "\td%d%s", ST_VAR_ORDER(st, k, j), ST_VAR_NAME(st, j)); */
+/*   } */
 
-  SUNMatrix mat = ExtSUNMatGetMat(pm->pm_jacs[k]);
-  if (SUNMatGetID(mat) == SUNMATRIX_DENSE) { SUNDenseMatrix_Print(mat, file); }
-}
+/*   SUNMatrix mat = DDMatGetSUNMat(pm->pm_jacs[k]); */
+/*   if (SUNMatGetID(mat) == SUNMATRIX_DENSE) { SUNDenseMatrix_Print(mat, file); } */
+/* } */
 
 static sunindextype ComputeNZSpec(sunindextype N, const uint8_t spec[N],
                                   sunindextype* NZ_spec)
@@ -285,8 +249,10 @@ static sunindextype ComputeNZSpec(sunindextype N, const uint8_t spec[N],
   return len;
 }
 
-sunbooleantype PPComputeDDSpec(const Structure st[static 1], PivMem pm[static 1])
+SUNErrCode PPComputeDDSpec(const Structure st[static 1], PivMem pm[static 1])
 {
+  SUNFunctionBegin(pm->sunctx);
+
   for (uint8_t k = 0; k < st->st_K; ++k)
   {
     for (sunindextype l = 0; l < st->st_Nk[k]; ++l)
@@ -294,8 +260,7 @@ sunbooleantype PPComputeDDSpec(const Structure st[static 1], PivMem pm[static 1]
       const sunindextype j = pm->pm_vars[k][l];
       if (!pm->pm_known[k][j])
       {
-        if (k > 0 && pm->pm_known[k - 1][j]) { return SUNFALSE; }
-
+        SUNAssert(k <= 0 || !pm->pm_known[k - 1][j], SUN_ERR_OP_FAIL);
         pm->pm_spec[j]++;
       }
     }
@@ -303,13 +268,13 @@ sunbooleantype PPComputeDDSpec(const Structure st[static 1], PivMem pm[static 1]
 
   pm->pm_NNZ_spec = ComputeNZSpec(st->st_DAE_N, pm->pm_spec, pm->pm_NZ_spec);
 
-  return SUNTRUE;
+  return SUN_SUCCESS;
 }
 
-sunbooleantype PPUpdateDDSpec(const uint8_t spec[static 1], PivMem pm[static 1])
+SUNErrCode PPUpdateDDSpec(const uint8_t spec[static 1], PivMem pm[static 1])
 {
   memcpy(pm->pm_spec, spec, pm->pm_DAE_N * sizeof(uint8_t));
   pm->pm_NNZ_spec = ComputeNZSpec(pm->pm_DAE_N, pm->pm_spec, pm->pm_NZ_spec);
 
-  return SUNTRUE;
+  return SUN_SUCCESS;
 }

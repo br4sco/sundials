@@ -32,7 +32,7 @@ int main(void)
   SUNMatrix J0 = SUNDenseMatrix(st->st_DAE_N, st->st_DAE_N, ctx);
   TEST_ASSERT(J0);
 
-  ExtSUNMatrix* jac0 = ExtSUNMatWrapDense(J0);
+  DDMatrix* jac0 = DDMatWrapDense(J0);
   TEST_ASSERT(jac0);
   N_Vector yy = N_VNew_Serial(st->st_N, ctx);
   TEST_ASSERT(yy);
@@ -132,7 +132,7 @@ int main(void)
   DDFree(&dd_mem);
   N_VDestroy(yy);
   N_VDestroyVectorArray(yyS, LOTKA_VOLTERRA_NP);
-  ExtSUNMatDestroy(jac0);
+  DDMatDestroy(jac0);
   SUNMatDestroy(J0);
   STDestroy(st);
   SUNContext_Free(&ctx);

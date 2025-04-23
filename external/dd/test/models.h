@@ -8,6 +8,7 @@
 
 #include "matrix.h"
 #include "sundials/sundials_nvector.h"
+#include "sundials/sundials_types.h"
 
 /**
  * @file
@@ -23,9 +24,10 @@
  * Lotka-Volterra predator-prey model (ODE)
  * -------------------------------------------------------------------------- */
 
-static const sunindextype LOTKA_VOLTERRA_N = 2;
-static const uint8_t LOTKA_VOLTERRA_C[]    = {0, 0}; /* f₁, f₂ */
-static const uint8_t LOTKA_VOLTERRA_D[]    = {1, 1}; /* x', y' */
+static const sunindextype LOTKA_VOLTERRA_N       = 2;
+static const uint8_t LOTKA_VOLTERRA_C[]          = {0, 0}; /* f₁, f₂ */
+static const uint8_t LOTKA_VOLTERRA_D[]          = {1, 1}; /* x', y' */
+static const sunindextype LOTKA_VOLTERRA_JAC_NNZ = 6;
 
 #define LV_X(Y, l) (N_VGetArrayPointer(Y)[l])
 #define LV_Y(Y, l) (N_VGetArrayPointer(Y)[2 + l])
@@ -90,11 +92,10 @@ int LotkaVolterraResS(int Ns, SUNDIALS_MAYBE_UNUSED sunrealtype t, N_Vector Y,
 }
 
 int LotkaVolterraJacf0(SUNDIALS_MAYBE_UNUSED sunrealtype t,
-                       SUNDIALS_MAYBE_UNUSED N_Vector Y,
-                       ExtSUNMatrix jac0[static 1],
+                       SUNDIALS_MAYBE_UNUSED N_Vector Y, DDMatrix jac0[static 1],
                        SUNDIALS_MAYBE_UNUSED void* user_data)
 {
-  SUNMatrix J0 = ExtSUNMatGetMat(jac0);
+  SUNMatrix J0 = DDMatGetSUNMat(jac0);
 
   SM_ELEMENT_D(J0, 0, 0) = ONE;
   SM_ELEMENT_D(J0, 1, 1) = ONE;
@@ -134,6 +135,7 @@ static const sunindextype PENDULUM_N       = 3;
 static const uint8_t PENDULUM_C[]          = {0, 0, 2}; /* f₁, f₂, f₃'' */
 static const uint8_t PENDULUM_D[]          = {2, 2, 0}; /* x'', y'', λ */
 static const sunrealtype PENDULUM_ADJ_ID[] = {ONE, ONE, ONE, ONE, ONE};
+static const sunindextype PENDULUM_JAC_NNZ = 18;
 
 #define P_X(Y, l)   (N_VGetArrayPointer(Y)[l])
 #define P_Y(Y, l)   (N_VGetArrayPointer(Y)[3 + l])
@@ -287,14 +289,13 @@ int PendulumResB(SUNDIALS_MAYBE_UNUSED sunrealtype t, N_Vector Y, N_Vector yyB,
 }
 
 int PendulumJacf0(SUNDIALS_MAYBE_UNUSED sunrealtype t, N_Vector Y,
-                  ExtSUNMatrix J0[static 1],
-                  SUNDIALS_MAYBE_UNUSED void* user_data)
+                  DDMatrix J0[static 1], SUNDIALS_MAYBE_UNUSED void* user_data)
 {
   PendulumData* data = (PendulumData*)user_data;
   sunrealtype m = data->m, l = data->param[0];
 
   sunrealtype x = P_X(Y, 0), y = P_Y(Y, 0);
-  SUNMatrix A = ExtSUNMatGetMat(J0);
+  SUNMatrix A = DDMatGetSUNMat(J0);
 
   SM_ELEMENT_D(A, 0, 0) = m;
   SM_ELEMENT_D(A, 0, 2) = x / l;
@@ -314,9 +315,10 @@ int PendulumJacf0(SUNDIALS_MAYBE_UNUSED sunrealtype t, N_Vector Y,
  * Comput., vol. 14, no. 3, pp. 677–692, May 1993, doi: 10.1137/0914043.
  * -------------------------------------------------------------------------- */
 
-static const sunindextype LINSYS_N = 4;
-static const uint8_t LINSYS_C[]    = {2, 2, 1, 0};
-static const uint8_t LINSYS_D[]    = {2, 2, 2, 1};
+static const sunindextype LINSYS_N       = 4;
+static const uint8_t LINSYS_C[]          = {2, 2, 1, 0};
+static const uint8_t LINSYS_D[]          = {2, 2, 2, 1};
+static const sunindextype LINSYS_JAC_NNZ = 23;
 
 /* --------------------------------------------------------------------------
  * Non-linear system from: R. McKenzie and J. Pryce, “Structural analysis based
@@ -324,8 +326,9 @@ static const uint8_t LINSYS_D[]    = {2, 2, 2, 1};
  * Math, vol. 57, no. 2, pp. 433–462, Jun. 2017, doi: 10.1007/s10543-016-0642-9.
  * -------------------------------------------------------------------------- */
 
-static const sunindextype NONLINSYS_N = 5;
-static const uint8_t NONLINSYS_C[]    = {1, 0, 2, 2, 1};
-static const uint8_t NONLINSYS_D[]    = {3, 2, 2, 2, 2};
+static const sunindextype NONLINSYS_N       = 5;
+static const uint8_t NONLINSYS_C[]          = {1, 0, 2, 2, 1};
+static const uint8_t NONLINSYS_D[]          = {3, 2, 2, 2, 2};
+static const sunindextype NONLINSYS_JAC_NNZ = 39;
 
 #endif

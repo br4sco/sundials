@@ -12,6 +12,7 @@ set(unit_tests
   "dd_matrix_test_dense_pivot_example_1_2\;"
   "dd_matrix_test_dense_clonesub\;"
   "dd_matrix_test_dense_copysub\;"
+  "dd_matrix_test_sparse_from_structure\;"
   "dd_structure_test_create_destroy\;"
   "dd_structure_test_lotka_volterra\;"
   "dd_structure_test_pendulum\;"
