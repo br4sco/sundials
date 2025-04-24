@@ -6,6 +6,7 @@
 #include <sundials/sundials_matrix.h>
 #include <sundials/sundials_nvector.h>
 #include <sunlinsol/sunlinsol_dense.h>
+#include <sunlinsol/sunlinsol_klu.h>
 #include <sunmatrix/sunmatrix_dense.h>
 
 #include "dd.h"
@@ -13,10 +14,29 @@
 #include "models.h"
 #include "structure.h"
 #include "sundials/sundials_types.h"
+#include "sunmatrix/sunmatrix_sparse.h"
 #include "test.h"
 
-int main(void)
+int main(int argc, char* argv[])
 {
+  enum
+  {
+    NONE  = 'n',
+    DENSE = 'd',
+    CSR   = 'r',
+    CSC   = 'c'
+  } mat_type;
+
+  TEST_ASSERT(argc > 1);
+  switch (argv[1][0])
+  {
+  case NONE: mat_type = NONE; break;
+  case DENSE: mat_type = DENSE; break;
+  case CSR: mat_type = CSR; break;
+  case CSC: mat_type = CSC; break;
+  default: TEST_ASSERT(0);
+  }
+
   /* Compute DAE structure. */
   char* eqn_names[] = {"f₁", "f₂"};
   char* var_names[] = {"x", "y"};
@@ -24,22 +44,24 @@ int main(void)
                            eqn_names, var_names);
   TEST_ASSERT(st);
 
+  const sunindextype N = st->st_N;
+
   /* Setup Sundials context. */
-  SUNContext ctx;
-  TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &ctx) == SUN_SUCCESS);
+  SUNContext sunctx;
+  TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &sunctx) == SUN_SUCCESS);
 
   /* Allocate state and Jacobian data. */
-  SUNMatrix J0 = SUNDenseMatrix(st->st_DAE_N, st->st_DAE_N, ctx);
+  SUNMatrix J0 = SUNDenseMatrix(st->st_DAE_N, st->st_DAE_N, sunctx);
   TEST_ASSERT(J0);
 
-  DDMatrix* jac0 = DDMatWrapDense(J0);
-  TEST_ASSERT(jac0);
-  N_Vector yy = N_VNew_Serial(st->st_N, ctx);
-  TEST_ASSERT(yy);
+  DDMatrix* dd_J0 = DDMatWrapDense(J0);
+  TEST_ASSERT(dd_J0);
+  N_Vector Y = N_VNew_Serial(N, sunctx);
+  TEST_ASSERT(Y);
 
   /* Allocate forward forward-sensitivity arrays. */
-  N_Vector* yyS = N_VCloneVectorArray(LOTKA_VOLTERRA_NP, yy);
-  TEST_ASSERT(yyS);
+  N_Vector* YS = N_VCloneVectorArray(LOTKA_VOLTERRA_NP, Y);
+  TEST_ASSERT(YS);
 
   /* Set parameters */
   LotkaVolterraParams p = {.a = SUN_RCONST(1.5),
@@ -49,29 +71,29 @@ int main(void)
 
   /* Set initial values. */
   sunindextype t0 = SUN_RCONST(0.0);
-  N_VConst(SUN_RCONST(0.0), yy);
-  LV_X(yy, 0) = SUN_RCONST(1.0);
-  LV_X(yy, 1) = p.a - p.b;
-  LV_Y(yy, 0) = SUN_RCONST(1.0);
-  LV_Y(yy, 1) = p.d - p.c;
+  N_VConst(SUN_RCONST(0.0), Y);
+  LV_X(Y, 0) = SUN_RCONST(1.0);
+  LV_X(Y, 1) = p.a - p.b;
+  LV_Y(Y, 0) = SUN_RCONST(1.0);
+  LV_Y(Y, 1) = p.d - p.c;
   for (int i = 0; i < LOTKA_VOLTERRA_NP; ++i)
   {
-    N_VConst(SUN_RCONST(0.0), yyS[i]);
+    N_VConst(SUN_RCONST(0.0), YS[i]);
   }
 
   /* Compute J0 at the initial time. */
   TEST_ASSERT(SUNMatZero(J0) == SUN_SUCCESS);
-  TEST_ASSERT(LotkaVolterraJacf0(t0, yy, jac0, &p) == 0);
+  TEST_ASSERT(LotkaVolterraJacf0(t0, Y, dd_J0, &p) == 0);
 
   /* Create solver session. */
-  DDMem dd_mem = DDCreate(ctx);
+  DDMem dd_mem = DDCreate(sunctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(DDInit(dd_mem, st, SUN_RCONST(0.0), LotkaVolterraJacf0, jac0,
-                     LotkaVolterraRes, t0, yy) == IDA_SUCCESS);
+  TEST_ASSERT(DDInit(dd_mem, st, SUN_RCONST(0.0), LotkaVolterraJacf0, dd_J0,
+                     LotkaVolterraRes, t0, Y) == IDA_SUCCESS);
 
   TEST_ASSERT(DDSensInit(dd_mem, LOTKA_VOLTERRA_NP, IDA_STAGGERED,
-                         LotkaVolterraResS, yyS) == IDA_SUCCESS);
+                         LotkaVolterraResS, YS) == IDA_SUCCESS);
 
   /* Set parameters as user data. */
   TEST_ASSERT(DDSetUserData(dd_mem, &p) == IDA_SUCCESS);
@@ -80,18 +102,59 @@ int main(void)
               IDA_SUCCESS);
 
   /* Setup and set linear solver. */
-  SUNMatrix jac = SUNDenseMatrix(st->st_N, st->st_N, ctx);
-  TEST_ASSERT(jac);
-  SUNLinearSolver ls = SUNLinSol_Dense(yy, jac, ctx);
-  TEST_ASSERT(ls);
+  SUNMatrix J        = NULL;
+  SUNLinearSolver LS = NULL;
 
-  TEST_ASSERT(DDSetLinearSolver(dd_mem, ls, jac) == IDA_SUCCESS);
+  switch (mat_type)
+  {
+  case NONE:
+  case DENSE:
+    J = SUNDenseMatrix(N, N, sunctx);
+    TEST_ASSERT(J);
+    LS = SUNLinSol_Dense(Y, J, sunctx);
+    TEST_ASSERT(LS);
+    break;
+  case CSR:
+  case CSC:
+    J = SUNSparseMatrix(N, N, LOTKA_VOLTERRA_JAC_NNZ + 4,
+                        mat_type == CSR ? CSR_MAT : CSC_MAT, sunctx);
+    TEST_ASSERT(J);
+    LS = SUNLinSol_KLU(Y, J, sunctx);
+    TEST_ASSERT(LS);
+    break;
+  }
+
+  TEST_ASSERT(DDSetLinearSolver(dd_mem, LS, J) == IDA_SUCCESS);
+
+  switch (mat_type)
+  {
+  case NONE: break;
+  case DENSE:
+    TEST_ASSERT(DDSetJacFn(dd_mem, (DDLsJacFn){.id = DD_JAC_1,
+                                               .fn.jacfn1 = LotkaVolterraJacfn_Dense}) ==
+                IDA_SUCCESS);
+    break;
+  case CSR:
+    TEST_ASSERT(
+      DDSetJacFn(dd_mem, (DDLsJacFn){.id        = DD_JAC_1,
+                                     .fn.jacfn1 = LotkaVolterraJacfn_CSR}) ==
+      IDA_SUCCESS);
+    break;
+  case CSC:
+    TEST_ASSERT(
+      DDSetJacFn(dd_mem, (DDLsJacFn){.id        = DD_JAC_2,
+                                     .fn.jacfn2 = LotkaVolterraJacfn_CSC}) ==
+      IDA_SUCCESS);
+    break;
+  }
 
   /* Set stop time */
   TEST_ASSERT(DDSetStopTime(dd_mem, SUN_RCONST(100.0)) == IDA_SUCCESS);
 
   /* Set up result file */
-  FILE* res = fopen("lotka-volterra.csv", "w");
+  char filename[25];
+  sprintf(filename, "lotka-volterra_%c.csv", mat_type);
+  FILE* res = fopen(filename, "w");
   TEST_ASSERT(res);
 
   /* Solve and output solution. */
@@ -106,11 +169,11 @@ int main(void)
     PivotResult pr = DDPivot(dd_mem);
     TEST_ASSERT(pr >= 0);
 
-    const sunrealtype x = LV_X(yy, 0), y = LV_Y(yy, 0);
-    const sunrealtype xS[] = {LV_X(yyS[0], 0), LV_X(yyS[1], 0), LV_X(yyS[2], 0),
-                              LV_X(yyS[3], 0)},
-                      yS[] = {LV_Y(yyS[0], 0), LV_Y(yyS[1], 0), LV_Y(yyS[2], 0),
-                              LV_Y(yyS[3], 0)};
+    const sunrealtype x = LV_X(Y, 0), y = LV_Y(Y, 0);
+    const sunrealtype xS[] = {LV_X(YS[0], 0), LV_X(YS[1], 0), LV_X(YS[2], 0),
+                              LV_X(YS[3], 0)},
+                      yS[] = {LV_Y(YS[0], 0), LV_Y(YS[1], 0), LV_Y(YS[2], 0),
+                              LV_Y(YS[3], 0)};
 
     fprintf(res,
             "%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%."
@@ -119,23 +182,23 @@ int main(void)
             pr == PIVOT_SUCCESS ? 1 : 0);
 
     tout += SUN_RCONST(0.1);
-    sr = DDSolve(dd_mem, tout, &tret, yy, IDA_NORMAL);
+    sr = DDSolve(dd_mem, tout, &tret, Y, IDA_NORMAL);
 
     TEST_ASSERT((sr == IDA_SUCCESS) || (sr == IDA_TSTOP_RETURN));
-    TEST_ASSERT(DDGetSens(dd_mem, &tret, yyS) == IDA_SUCCESS);
+    TEST_ASSERT(DDGetSens(dd_mem, &tret, YS) == IDA_SUCCESS);
   }
 
   /* Cleanup */
-  fclose(res);
-  SUNLinSolFree(ls);
-  SUNMatDestroy(jac);
   DDFree(&dd_mem);
-  N_VDestroy(yy);
-  N_VDestroyVectorArray(yyS, LOTKA_VOLTERRA_NP);
-  DDMatDestroy(jac0);
-  SUNMatDestroy(J0);
+  DDMatDestroy(dd_J0);
+  N_VDestroy(Y);
+  N_VDestroyVectorArray(YS, LOTKA_VOLTERRA_NP);
   STDestroy(st);
-  SUNContext_Free(&ctx);
+  SUNContext_Free(&sunctx);
+  SUNLinSolFree(LS);
+  SUNMatDestroy(J);
+  SUNMatDestroy(J0);
+  fclose(res);
 
   return EXIT_SUCCESS;
 }

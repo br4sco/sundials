@@ -45,8 +45,8 @@ int main(void)
   /* Allocate state and Jacobian data. */
   SUNMatrix J0 = SUNDenseMatrix(st->st_DAE_N, st->st_DAE_N, ctx);
   TEST_ASSERT(J0);
-  DDMatrix* jac0 = DDMatWrapDense(J0);
-  TEST_ASSERT(jac0);
+  DDMatrix* dd_J0 = DDMatWrapDense(J0);
+  TEST_ASSERT(dd_J0);
   N_Vector Y = N_VNew_Serial(st->st_N, ctx);
   TEST_ASSERT(Y);
 
@@ -63,13 +63,13 @@ int main(void)
 
   /* Compute J0 at the initial time. */
   TEST_ASSERT(SUNMatZero(J0) == SUN_SUCCESS);
-  TEST_ASSERT(PendulumJacf0(t0, Y, jac0, data) == 0);
+  TEST_ASSERT(PendulumJacf0(t0, Y, dd_J0, data) == 0);
 
   /* Create solver session. */
   DDMem dd_mem = DDCreate(ctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(DDInit(dd_mem, st, SUN_RCONST(0.0), PendulumJacf0, jac0,
+  TEST_ASSERT(DDInit(dd_mem, st, SUN_RCONST(0.0), PendulumJacf0, dd_J0,
                      PendulumRes, t0, Y) == IDA_SUCCESS);
 
   TEST_ASSERT(DDAdjInit(dd_mem, Nd, IDA_POLYNOMIAL) == IDA_SUCCESS);
@@ -80,12 +80,12 @@ int main(void)
               IDA_SUCCESS);
 
   /* Setup and set linear solver. */
-  SUNMatrix A = SUNDenseMatrix(st->st_N, st->st_N, ctx);
-  TEST_ASSERT(A);
-  SUNLinearSolver LS = SUNLinSol_Dense(Y, A, ctx);
+  SUNMatrix J = SUNDenseMatrix(st->st_N, st->st_N, ctx);
+  TEST_ASSERT(J);
+  SUNLinearSolver LS = SUNLinSol_Dense(Y, J, ctx);
   TEST_ASSERT(LS);
 
-  TEST_ASSERT(DDSetLinearSolver(dd_mem, LS, A) == IDA_SUCCESS);
+  TEST_ASSERT(DDSetLinearSolver(dd_mem, LS, J) == IDA_SUCCESS);
 
   /* Set up result file */
   FILE* filef = fopen("pendulum_ASA_forward.csv", "w");
@@ -183,17 +183,17 @@ int main(void)
   }
 
   /* Cleanup */
-  SUNLinSolFree(LSB);
-  SUNMatDestroy(AB);
   DDFree(&dd_mem);
-  DDMatDestroy(jac0);
+  DDMatDestroy(dd_J0);
   N_VDestroy(Y);
   N_VDestroy(ypB);
   N_VDestroy(yyB);
   STDestroy(st);
   SUNContext_Free(&ctx);
   SUNLinSolFree(LS);
-  SUNMatDestroy(A);
+  SUNLinSolFree(LSB);
+  SUNMatDestroy(AB);
+  SUNMatDestroy(J);
   SUNMatDestroy(J0);
   fclose(fileb);
   fclose(filef);

@@ -14,7 +14,7 @@
 #define DD_DEFINE_RESULT(NAME, T, E) \
   typedef struct                     \
   {                                  \
-    bool is_error : 1;               \
+    sunbooleantype is_error;         \
     union                            \
     {                                \
       T result;                      \
@@ -26,7 +26,7 @@
 #define DD_DEFINE_OPTION(NAME, T) \
   typedef struct                  \
   {                               \
-    bool none : 1;                \
+    sunbooleantype none;          \
     T val;                        \
   } Option_##NAME
 

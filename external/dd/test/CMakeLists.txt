@@ -12,6 +12,12 @@ set(unit_tests
   "dd_matrix_test_dense_pivot_example_1_2\;"
   "dd_matrix_test_dense_clonesub\;"
   "dd_matrix_test_dense_copysub\;"
+  "dd_matrix_test_evalddjac\;d"
+  "dd_matrix_test_evalddjac\;d 1"
+  "dd_matrix_test_evalddjac\;r"
+  "dd_matrix_test_evalddjac\;r 1"
+  "dd_matrix_test_evalddjac\;c"
+  "dd_matrix_test_evalddjac\;c 1"
   "dd_matrix_test_sparse_from_structure\;"
   "dd_structure_test_create_destroy\;"
   "dd_structure_test_lotka_volterra\;"
@@ -21,12 +27,24 @@ set(unit_tests
   "dd_pivot_test_pendulum_2\;"
   "dd_pivot_test_linsys_1\;"
   "dd_pivot_test_nonlinsys_1\;"
-  "model_lotka-volterra\;"
-  "model_pendulum\;"
+  "model_lotka-volterra\;n"
+  "model_lotka-volterra\;d"
+  "model_lotka-volterra\;r"
+  "model_lotka-volterra\;c"
+  "model_pendulum\;n"
+  "model_pendulum\;d"
+  "model_pendulum\;r"
+  "model_pendulum\;c"
   "model_pendulum_FSA\;"
   "model_pendulum_FSA\;analytic_sens_residual"
   "model_pendulum_ASA\;"
 )
+
+# Sundials KLU linear solver module
+set(SUNLINSOLKLU_LIBS sundials_sunlinsolklu)
+
+# KLU libraries
+list(APPEND SUNLINSOLKLU_LIBS)
 
 # Add the build and install targets for each test
 foreach(test_tuple ${unit_tests})
@@ -52,7 +70,8 @@ foreach(test_tuple ${unit_tests})
 
     # libraries to link against
     target_link_libraries(${test} sundials_idas sundials_nvecserial dd
-      ${EXE_EXTRA_LINK_LIBS})
+      ${EXE_EXTRA_LINK_LIBS}
+      ${SUNLINSOLKLU_LIBS})
 
   endif()
 

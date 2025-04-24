@@ -2,7 +2,6 @@
 #include <sundials/sundials_core.h>
 #include <sunmatrix/sunmatrix_dense.h>
 
-#include "matrix.h"
 #include "models.h"
 #include "structure.h"
 #include "test.h"

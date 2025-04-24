@@ -13,10 +13,16 @@
 #include "dd.h"
 #include "dd_err.h"
 #include "idas/idas_impl.h"
+#include "idas/idas_ls.h"
 #include "matrix.h"
 #include "pivot.h"
 #include "structure.h"
+#include "sundials/sundials_errors.h"
+#include "sundials/sundials_matrix.h"
+#include "sundials/sundials_nvector.h"
 #include "sundials/sundials_types.h"
+#include "sunmatrix/sunmatrix_dense.h"
+#include "sunmatrix/sunmatrix_sparse.h"
 
 /* ==========================================================================
  * Types and Macros
@@ -53,7 +59,7 @@ static void DDckpntDestroy(DDckpntMem* ck_mem_ptr)
       ck->ck_spec = NULL;
     }
 
-    /* NOTE(oerikss, 2025-04-15): We delegage deleting IDA checkpoints to
+    /* NOTE(oerikss, 2025-04-15): We delegate deleting IDA checkpoints to
          `IDAAdjFree` in `DDAdjFree`. */
 
     free(ck);
@@ -61,7 +67,8 @@ static void DDckpntDestroy(DDckpntMem* ck_mem_ptr)
   }
 }
 
-static DDckpntMem DDckpntCreate(sunrealtype t, sunindextype speclen,
+static DDckpntMem DDckpntCreate(sunrealtype t,
+                                sunindextype speclen,
                                 const uint8_t spec[static speclen])
 {
   DDckpntMem ck_mem = malloc(sizeof(*ck_mem));
@@ -123,6 +130,7 @@ struct DDMemRec
   uint8_t* dd_prev_spec;
   DDJacFn0* dd_jacf0;
   DDMatrix* dd_J0;
+  SUNMatrix dd_J;
 
   /* IDA Memory */
 
@@ -131,7 +139,8 @@ struct DDMemRec
   /* Forward Problem */
 
   DDResFn* dd_res;
-  DDLsJacFn* dd_jacf;
+  DDLsJacFn1* dd_jacfn1;
+  DDLsJacFn2* dd_jacfn2;
   sunrealtype dd_t0;
   N_Vector dd_yy;
   N_Vector dd_yp;
@@ -158,22 +167,67 @@ struct DDMemRec
 
 static int DDResWrapper(sunrealtype, N_Vector, N_Vector, N_Vector, void*);
 
-/* static int DDLsJacFnWrapper(sunrealtype, sunrealtype, N_Vector, N_Vector, */
-/*                             N_Vector, SUNMatrix, void*, N_Vector, N_Vector, */
-/*                             N_Vector); */
+static int DDLsJacFnWrapper1_Dense(sunrealtype,
+                                   sunrealtype,
+                                   N_Vector,
+                                   N_Vector,
+                                   N_Vector,
+                                   SUNMatrix,
+                                   void*,
+                                   N_Vector,
+                                   N_Vector,
+                                   N_Vector);
 
-static int DDResSWrapper(int Ns, sunrealtype, N_Vector, N_Vector, N_Vector,
-                         N_Vector[static Ns], N_Vector[static Ns],
-                         N_Vector[static Ns], void*, N_Vector, N_Vector,
+static int DDLsJacFnWrapper1_CSR(sunrealtype,
+                                 sunrealtype,
+                                 N_Vector,
+                                 N_Vector,
+                                 N_Vector,
+                                 SUNMatrix,
+                                 void*,
+                                 N_Vector,
+                                 N_Vector,
+                                 N_Vector);
+
+static int DDLsJacFnWrapper2(sunrealtype,
+                             sunrealtype,
+                             N_Vector,
+                             N_Vector,
+                             N_Vector,
+                             SUNMatrix,
+                             void*,
+                             N_Vector,
+                             N_Vector,
+                             N_Vector);
+
+static int DDResSWrapper(int Ns,
+                         sunrealtype,
+                         N_Vector,
+                         N_Vector,
+                         N_Vector,
+                         N_Vector[static Ns],
+                         N_Vector[static Ns],
+                         N_Vector[static Ns],
+                         void*,
+                         N_Vector,
+                         N_Vector,
                          N_Vector);
 
-static int DDResBWrapper(sunrealtype, N_Vector, N_Vector, N_Vector, N_Vector,
-                         N_Vector, void*);
+static int DDResBWrapper(sunrealtype,
+                         N_Vector,
+                         N_Vector,
+                         N_Vector,
+                         N_Vector,
+                         N_Vector,
+                         void*);
 
-static void DDSetYpFromY(const Structure[static 1], const PivMem[static 1],
-                         const N_Vector, N_Vector);
+static void DDSetYpFromY(const PivMem[static 1], const N_Vector, N_Vector);
 
 static void DDSetId(const Structure[static 1], const PivMem[static 1], N_Vector);
+
+static void DDAdjCleanup(DDMem dd_mem);
+
+static void DDSensCleanup(DDMem dd_mem);
 
 /* --------------------------------------------------------------------------
  * Debug helpers
@@ -254,17 +308,26 @@ DDMem DDCreate(SUNContext sunctx)
 {
   if (sunctx == NULL)
   {
-    DDHandleErr(DD_ERR_NULL_SUNCTX, NULL);
+    DDHandleErrWithCtx(DD_ERR_NULL_SUNCTX, NULL);
     return NULL;
   }
 
-  DDFunctionBegin(sunctx);
+  SUNFunctionBegin(sunctx);
 
   DDMem dd_mem = malloc(sizeof(*dd_mem));
-  DDCheckNull(dd_mem != NULL, DD_ERR_MALLOC_FAIL);
+  if (dd_mem == NULL)
+  {
+    DDHandleErr(SUN_ERR_MEM_FAIL);
+    return NULL;
+  }
 
   dd_mem->ida_mem = IDACreate(sunctx);
-  DDCheckNull(dd_mem->ida_mem != NULL, DD_ERR_MEM_FAIL);
+  if (dd_mem->ida_mem == NULL)
+  {
+    free(dd_mem);
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return NULL;
+  }
 
   dd_mem->sunctx = sunctx;
 
@@ -274,9 +337,11 @@ DDMem DDCreate(SUNContext sunctx)
   dd_mem->dd_prev_spec = NULL;
   dd_mem->dd_jacf0     = NULL;
   dd_mem->dd_J0        = NULL;
+  dd_mem->dd_J         = NULL;
 
   dd_mem->dd_res       = NULL;
-  dd_mem->dd_jacf      = NULL;
+  dd_mem->dd_jacfn1    = NULL;
+  dd_mem->dd_jacfn2    = NULL;
   dd_mem->dd_yp        = NULL;
   dd_mem->dd_yp        = NULL;
   dd_mem->dd_id        = NULL;
@@ -304,9 +369,9 @@ void DDFree(DDMem* dd_mem_ptr)
   DDMem dd_mem = *dd_mem_ptr;
   if (dd_mem == NULL) { return; }
 
-  DDSensFree(dd_mem);
+  DDSensCleanup(dd_mem);
 
-  DDAdjFree(dd_mem);
+  DDAdjCleanup(dd_mem);
 
   if (dd_mem->dd_pm != NULL)
   {
@@ -353,125 +418,150 @@ void DDFree(DDMem* dd_mem_ptr)
  * DDInit
  * -------------------------------------------------------------------------- */
 
-int DDInit(DDMem dd_mem, Structure st[static 1], sunrealtype ptol, DDJacFn0 jacf0,
-           DDMatrix J0[static 1], DDResFn res, sunrealtype t0, N_Vector Y0)
+int DDInit(DDMem dd_mem,
+           Structure st[static 1],
+           sunrealtype ptol,
+           DDJacFn0 jacf0,
+           DDMatrix J0[static 1],
+           DDResFn res,
+           sunrealtype t0,
+           N_Vector Y0)
 {
   if (dd_mem == NULL)
   {
-    DDHandleErr(DD_ERR_DD_MEM_NULL, NULL);
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
     return DD_ERR_DD_MEM_NULL;
   }
 
   SUNContext sunctx = dd_mem->sunctx;
 
-  DDFunctionBegin(sunctx);
+  SUNFunctionBegin(sunctx);
 
-  DDCheck(res != NULL, DD_ERR_ARG_CORRUPT);
-  DDCheck(jacf0 != NULL, DD_ERR_ARG_CORRUPT);
+  if (res == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
+
+  if (jacf0 == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
 
   dd_mem->dd_st        = st;
   dd_mem->dd_pivot_tol = ptol;
   dd_mem->dd_t0        = t0;
 
   PivMem* pm = PMCreate(sunctx, st, J0);
-  DDCheck(pm != NULL, DD_ERR_MEM_FAIL);
+  if (pm == NULL)
+  {
+    DDHandleErr(SUN_ERR_MEM_FAIL);
+    return SUN_ERR_MEM_FAIL;
+  }
   dd_mem->dd_pm = pm;
 
-  uint8_t* prev_spec = malloc(st->st_DAE_N * sizeof(*prev_spec));
-  DDCheck(prev_spec != NULL, DD_ERR_MALLOC_FAIL);
+  uint8_t* prev_spec = malloc(st->st_DAE_N * sizeof(*dd_mem->dd_prev_spec));
+  if (prev_spec == NULL)
+  {
+    DDHandleErr(SUN_ERR_MEM_FAIL);
+    return SUN_ERR_MEM_FAIL;
+  }
   dd_mem->dd_prev_spec = prev_spec;
 
   dd_mem->dd_jacf0 = jacf0;
   dd_mem->dd_J0    = J0;
   dd_mem->dd_res   = res;
 
-  DDCheck(PPivot(st, J0, ptol, pm) == SUN_SUCCESS, DD_ERR_OP_FAIL);
-  DDCheck(PPComputeDDSpec(st, pm) == SUN_SUCCESS, DD_ERR_OP_FAIL);
+  if ((PPivot(st, J0, ptol, pm) < 0) || (PPComputeDDSpec(st, pm) < 0))
+  {
+    DDHandleErr(SUN_ERR_OP_FAIL);
+    return SUN_ERR_OP_FAIL;
+  }
 
-  memcpy(prev_spec, pm->pm_spec, st->st_DAE_N * sizeof(uint8_t));
+  memcpy(prev_spec, pm->pm_spec, st->st_DAE_N * sizeof(*prev_spec));
 
   dd_mem->dd_yy = N_VClone(Y0);
-  DDCheck(dd_mem->dd_yy != NULL, DD_ERR_MEM_FAIL);
-
   dd_mem->dd_yp = N_VClone(Y0);
-  DDCheck(dd_mem->dd_yp != NULL, DD_ERR_MEM_FAIL);
-
-  DDSetYpFromY(st, pm, Y0, dd_mem->dd_yp);
-
-  DDCheck(IDAInit(dd_mem->ida_mem, DDResWrapper, t0, Y0, dd_mem->dd_yp) ==
-            IDA_SUCCESS,
-          DD_ERR_IDA_ERR);
+  if ((dd_mem->dd_yy == NULL) || (dd_mem->dd_yp == NULL))
+  {
+    DDHandleErr(SUN_ERR_MEM_FAIL);
+    return SUN_ERR_MEM_FAIL;
+  }
+  DDSetYpFromY(pm, Y0, dd_mem->dd_yp);
 
   dd_mem->dd_id = N_VClone(Y0);
-  DDCheck(dd_mem->dd_id != NULL, DD_ERR_MEM_FAIL);
-
+  if (dd_mem->dd_id == NULL)
+  {
+    DDHandleErr(SUN_ERR_MEM_FAIL);
+    return SUN_ERR_MEM_FAIL;
+  }
   DDSetId(st, pm, dd_mem->dd_id);
 
-  DDCheck(IDASetId(dd_mem->ida_mem, dd_mem->dd_id) == IDA_SUCCESS,
-          DD_ERR_IDA_ERR);
+  if (IDAInit(dd_mem->ida_mem, DDResWrapper, t0, Y0, dd_mem->dd_yp) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
 
-  DDCheck(IDASetUserData(dd_mem->ida_mem, dd_mem) == IDA_SUCCESS, DD_ERR_IDA_ERR);
+  if ((IDASetId(dd_mem->ida_mem, dd_mem->dd_id) < 0) ||
+      (IDASetUserData(dd_mem->ida_mem, dd_mem) < 0))
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
 
   return DD_SUCCESS;
 }
 
-static int DDResWrapper(sunrealtype t, N_Vector yy, N_Vector yp,
-                        N_Vector resval, void* user_data)
+static int DDResWrapper(sunrealtype t,
+                        N_Vector yy,
+                        N_Vector yp,
+                        N_Vector rr,
+                        void* user_data)
 {
   const DDMem dd_mem = (DDMem)user_data;
-  assert(dd_mem);
-  const Structure* st = dd_mem->dd_st;
-  const PivMem* pm    = dd_mem->dd_pm;
+  const PivMem* pm   = dd_mem->dd_pm;
 
-  /* Compute differential differential residuals. */
+  /* Evaluate differential equations residual. */
+
+  const sunindextype N_diff = pm->pm_N_diff;
+  const sunindextype rr_ofs = N_VGetLength(rr) - N_diff;
 
   const sunrealtype *yy_arr = N_VGetArrayPointer(yy),
                     *yp_arr = N_VGetArrayPointer(yp);
 
-  sunrealtype* rr_arr = N_VGetArrayPointer(resval);
-
-  for (sunindextype i = 0; i < pm->pm_NNZ_spec; ++i)
+  sunrealtype* rr_arr = N_VGetArrayPointer(rr);
+  for (sunindextype i = 0; i < N_diff; ++i)
   {
-    const sunindextype var = pm->pm_NZ_spec[i], ofs = st->st_acc_varofs[var];
+    const sunindextype var = pm->pm_dvars[i];
 
-    const uint8_t dd = pm->pm_spec[var];
-    for (uint8_t j = 0; j < dd; ++j)
-    {
-      const sunindextype idx = ofs + j;
-
-      rr_arr[st->st_M + i * dd + j] = yy_arr[idx + 1] - yp_arr[idx];
-    }
+    rr_arr[rr_ofs + i] = yy_arr[var + 1] - yp_arr[var];
   }
 
   /* Evaluate user supplied residual function. */
 
-  const int flag = dd_mem->dd_res(t, yy, resval, dd_mem->dd_user_data);
+  int flag = dd_mem->dd_res(t, yy, rr, dd_mem->dd_user_data);
 
   return flag;
 }
 
-static void DDSetYpFromY(const Structure st[static 1], const PivMem pm[static 1],
-                         const N_Vector yy, N_Vector yp)
+static void DDSetYpFromY(const PivMem pm[static 1], const N_Vector yy, N_Vector yp)
 {
   N_VConst(ZERO, yp);
   const sunrealtype* yy_arr = N_VGetArrayPointer(yy);
   sunrealtype* yp_arr       = N_VGetArrayPointer(yp);
 
-  for (sunindextype i = 0; i < pm->pm_NNZ_spec; ++i)
+  for (sunindextype i = 0; i < pm->pm_N_diff; ++i)
   {
-    const sunindextype var = pm->pm_NZ_spec[i];
-    const uint8_t dd       = pm->pm_spec[var];
-    const sunindextype ofs = st->st_acc_varofs[var];
-    for (uint8_t j = 0; j < dd; ++j)
-    {
-      const sunindextype idx = ofs + j;
+    const sunindextype var = pm->pm_dvars[i];
 
-      yp_arr[idx] = yy_arr[idx + 1];
-    }
+    yp_arr[var + 1] = yy_arr[var];
   }
 }
 
-static void DDSetId(const Structure st[static 1], const PivMem pm[static 1],
+static void DDSetId(const Structure st[static 1],
+                    const PivMem pm[static 1],
                     N_Vector id)
 {
   N_VConst(ZERO, id);
@@ -490,23 +580,57 @@ static void DDSetId(const Structure st[static 1], const PivMem pm[static 1],
 
 int DDReInit(DDMem dd_mem, sunrealtype t0, N_Vector Y0)
 {
-  if (dd_mem == NULL) { return DD_GENERIC_ERROR; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_DD_MEM_NULL;
+  }
 
-  DDSetYpFromY(dd_mem->dd_st, dd_mem->dd_pm, Y0, dd_mem->dd_yp);
-  return IDAReInit(dd_mem->ida_mem, t0, Y0, dd_mem->dd_yp);
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  DDSetYpFromY(dd_mem->dd_pm, Y0, dd_mem->dd_yp);
+
+  if (IDAReInit(dd_mem->ida_mem, t0, Y0, dd_mem->dd_yp) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return DD_SUCCESS;
 }
 
 /* --------------------------------------------------------------------------
  * DDSolve
  * -------------------------------------------------------------------------- */
 
-int DDSolve(DDMem dd_mem, sunrealtype tout, sunrealtype tret[static 1],
-            N_Vector Y, int itask)
+int DDSolve(DDMem dd_mem,
+            sunrealtype tout,
+            sunrealtype tret[static 1],
+            N_Vector Y,
+            int itask)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_DD_MEM_NULL;
+  }
 
-  IDAMem ida_mem = dd_mem->ida_mem;
-  return IDASolve(ida_mem, tout, tret, Y, dd_mem->dd_yp, itask);
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (Y == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
+
+  int flag = IDASolve(dd_mem->ida_mem, tout, tret, Y, dd_mem->dd_yp, itask);
+  if (flag < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return flag;
 }
 
 /* --------------------------------------------------------------------------
@@ -517,14 +641,16 @@ PivotResult DDPivot(DDMem dd_mem)
 {
   if (dd_mem == NULL)
   {
-    DDHandleErr(DD_ERR_DD_MEM_NULL, NULL);
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
     return PIVOT_FAIL;
   }
+
+  SUNFunctionBegin(dd_mem->sunctx);
 
   const Structure* st = dd_mem->dd_st;
   PivMem* pm          = dd_mem->dd_pm;
 
-  memcpy(dd_mem->dd_prev_spec, pm->pm_spec, st->st_DAE_N * sizeof(uint8_t));
+  memcpy(dd_mem->dd_prev_spec, pm->pm_spec, st->st_DAE_N * sizeof(*pm->pm_spec));
 
   IDAMem ida_mem = dd_mem->ida_mem;
 
@@ -533,16 +659,27 @@ PivotResult DDPivot(DDMem dd_mem)
 
   const sunrealtype tn = ida_mem->ida_tn;
 
-  if (IDAGetDky(ida_mem, tn, 0, yy) < 0) { return PIVOT_FAIL; }
-
-  if (dd_mem->dd_jacf0(tn, yy, J0, dd_mem->dd_user_data) != 0)
+  if (IDAGetDky(ida_mem, tn, 0, yy) < 0)
   {
+    DDHandleErr(DD_ERR_IDA_ERR);
     return PIVOT_FAIL;
   }
 
-  if ((PPivot(st, J0, dd_mem->dd_pivot_tol, pm) < 0) ||
-      (PPComputeDDSpec(st, pm) < 0))
+  if (dd_mem->dd_jacf0(tn, yy, J0, dd_mem->dd_user_data) != 0)
   {
+    DDHandleErr(SUN_ERR_OP_FAIL);
+    return PIVOT_FAIL;
+  }
+
+  if (PPivot(st, J0, dd_mem->dd_pivot_tol, pm) < 0)
+  {
+    DDHandleErr(SUN_ERR_OP_FAIL);
+    return PIVOT_FAIL;
+  }
+
+  if (PPComputeDDSpec(st, pm) < 0)
+  {
+    DDHandleErr(SUN_ERR_OP_FAIL);
     return PIVOT_FAIL;
   }
 
@@ -562,25 +699,38 @@ PivotResult DDPivot(DDMem dd_mem)
 
     DDSetId(st, pm, id);
 
-    if (IDASetId(ida_mem, id) < 0) { return PIVOT_FAIL; }
+    if (IDASetId(ida_mem, id) < 0)
+    {
+      DDHandleErr(DD_ERR_IDA_ERR);
+      return PIVOT_FAIL;
+    }
 
-    DDSetYpFromY(st, pm, yy, yp);
+    DDSetYpFromY(pm, yy, yp);
 
-    if (IDAReInit(ida_mem, tn, yy, yp) < 0) { return PIVOT_FAIL; }
+    if (IDAReInit(ida_mem, tn, yy, yp) < 0)
+    {
+      DDHandleErr(DD_ERR_IDA_ERR);
+      return PIVOT_FAIL;
+    }
 
     if (ida_mem->ida_sensi)
     {
       N_Vector *yyS = dd_mem->dd_yyS, *ypS = dd_mem->dd_ypS;
 
-      if (IDAGetSensDky(ida_mem, tn, 0, yyS) < 0) { return PIVOT_FAIL; }
+      if (IDAGetSensDky(ida_mem, tn, 0, yyS) < 0)
+      {
+        DDHandleErr(DD_ERR_IDA_ERR);
+        return PIVOT_FAIL;
+      }
 
       for (int i = 0; i < ida_mem->ida_Ns; ++i)
       {
-        DDSetYpFromY(st, pm, yyS[i], ypS[i]);
+        DDSetYpFromY(pm, yyS[i], ypS[i]);
       }
 
       if (IDASensReInit(ida_mem, ida_mem->ida_ism, yyS, ypS) < 0)
       {
+        DDHandleErr(DD_ERR_IDA_ERR);
         return PIVOT_FAIL;
       }
     }
@@ -594,7 +744,11 @@ PivotResult DDPivot(DDMem dd_mem)
       ck_next->ida_ck_mem = ida_adj_mem->ck_mem;
 
       DDckpntMem ck_mem = DDckpntCreate(tn, pm->pm_DAE_N, pm->pm_spec);
-      if (ck_mem == NULL) { return PIVOT_FAIL; }
+      if (ck_mem == NULL)
+      {
+        DDHandleErr(SUN_ERR_MEM_FAIL);
+        return PIVOT_FAIL;
+      }
 
       ck_mem->ck_next = ck_next;
       dd_mem->ck_mem  = ck_mem;
@@ -607,7 +761,11 @@ PivotResult DDPivot(DDMem dd_mem)
 
       ida_adj_mem->ck_mem = NULL;
 
-      if (IDAAdjReInit(ida_mem) < 0) { return PIVOT_FAIL; }
+      if (IDAAdjReInit(ida_mem) < 0)
+      {
+        DDHandleErr(DD_ERR_IDA_ERR);
+        return PIVOT_FAIL;
+      }
     }
 
     return PIVOT_SUCCESS;
@@ -620,10 +778,8 @@ PivotResult DDPivot(DDMem dd_mem)
  * DDSensFree
  * -------------------------------------------------------------------------- */
 
-void DDSensFree(DDMem dd_mem)
+static void DDSensCleanup(DDMem dd_mem)
 {
-  if (dd_mem == NULL) { return; }
-
   IDAMem ida_mem = dd_mem->ida_mem;
 
   if (dd_mem->dd_yyS != NULL)
@@ -649,76 +805,114 @@ void DDSensFree(DDMem dd_mem)
   }
 }
 
+void DDSensFree(DDMem dd_mem)
+{
+  if (dd_mem == NULL) { return; }
+
+  DDSensCleanup(dd_mem);
+  IDASensFree(dd_mem->ida_mem);
+}
+
 /* --------------------------------------------------------------------------
  * DDSensInit
  * -------------------------------------------------------------------------- */
 
-int DDSensInit(DDMem dd_mem, int Ns, int ism, DDSensResFn resfnS,
+int DDSensInit(DDMem dd_mem,
+               int Ns,
+               int ism,
+               DDSensResFn resfnS,
                N_Vector YS0[static Ns])
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
+
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (Ns < 1)
+  {
+    DDHandleErr(SUN_ERR_ARG_OUTOFRANGE);
+    return SUN_ERR_ARG_OUTOFRANGE;
+  }
+
+  if ((ism != IDA_STAGGERED) && (ism != IDA_SIMULTANEOUS))
+  {
+    DDHandleErr(SUN_ERR_ARG_OUTOFRANGE);
+    return SUN_ERR_ARG_OUTOFRANGE;
+  }
 
   N_Vector* yS = N_VCloneVectorArray(Ns, YS0[0]);
-  if (yS == NULL) { return DD_ERR_UNKNOWN; }
+  if (yS == NULL)
+  {
+    DDHandleErr(SUN_ERR_MEM_FAIL);
+    return SUN_ERR_MEM_FAIL;
+  }
   dd_mem->dd_yyS = yS;
 
   N_Vector* ypS = N_VCloneVectorArray(Ns, YS0[0]);
   if (ypS == NULL)
   {
-    DDSensFree(dd_mem);
-    return DD_ERR_UNKNOWN;
+    DDHandleErr(SUN_ERR_MEM_FAIL);
+    return SUN_ERR_MEM_FAIL;
   }
   dd_mem->dd_ypS = ypS;
 
-  for (int i = 0; i < Ns; ++i)
-  {
-    DDSetYpFromY(dd_mem->dd_st, dd_mem->dd_pm, YS0[i], ypS[i]);
-  }
+  for (int i = 0; i < Ns; ++i) { DDSetYpFromY(dd_mem->dd_pm, YS0[i], ypS[i]); }
 
-  int flag = IDASensInit(dd_mem->ida_mem, Ns, ism,
-                         resfnS ? DDResSWrapper : NULL, YS0, ypS);
-  if (flag < 0) { return flag; }
+  if (IDASensInit(dd_mem->ida_mem, Ns, ism, resfnS ? DDResSWrapper : NULL, YS0,
+                  ypS) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
 
   dd_mem->dd_resS = resfnS;
 
-  return flag;
+  return DD_SUCCESS;
 }
 
-static int DDResSWrapper(int Ns, sunrealtype t, N_Vector yy,
-                         SUNDIALS_MAYBE_UNUSED N_Vector yp, N_Vector rr,
-                         N_Vector yyS[static Ns], N_Vector ypS[static Ns],
-                         N_Vector resvalS[static Ns], void* user_data,
-                         N_Vector tmp1, N_Vector tmp2, N_Vector tmp3)
+static int DDResSWrapper(int Ns,
+                         sunrealtype t,
+                         N_Vector yy,
+                         SUNDIALS_MAYBE_UNUSED N_Vector yp,
+                         N_Vector rr,
+                         N_Vector yyS[static Ns],
+                         N_Vector ypS[static Ns],
+                         N_Vector rrS[static Ns],
+                         void* user_data,
+                         N_Vector tmp1,
+                         N_Vector tmp2,
+                         N_Vector tmp3)
 {
   const DDMem dd_mem = (DDMem)user_data;
-  assert(dd_mem);
-  const Structure* st = dd_mem->dd_st;
-  const PivMem* ps    = dd_mem->dd_pm;
+
+  DDAssertWithCtx(dd_mem != NULL, SUN_ERR_ARG_CORRUPT, NULL);
+
+  const PivMem* pm = dd_mem->dd_pm;
 
   /* Compute sensitivites of differential residuals. */
 
-  for (sunindextype i = 0; i < ps->pm_NNZ_spec; ++i)
+  const sunindextype N_diff = pm->pm_N_diff;
+  const sunindextype rr_ofs = N_VGetLength(rrS[0]) - N_diff;
+  for (int i = 0; i < Ns; ++i)
   {
-    const sunindextype var = ps->pm_NZ_spec[i], ofs = st->st_acc_varofs[var];
-    const uint8_t dd = ps->pm_spec[var];
-    for (int j = 0; j < Ns; ++j)
+    const sunrealtype *yyS_arr = N_VGetArrayPointer(yyS[i]),
+                      *ypS_arr = N_VGetArrayPointer(ypS[i]);
+
+    sunrealtype* rrS_arr = N_VGetArrayPointer(rrS[i]);
+    for (sunindextype j = 0; j < N_diff; ++j)
     {
-      const sunrealtype *yyS_arr = N_VGetArrayPointer(yyS[j]),
-                        *ypS_arr = N_VGetArrayPointer(ypS[j]);
+      const sunindextype var = pm->pm_dvars[j];
 
-      sunrealtype* rrS_arr = N_VGetArrayPointer(resvalS[j]);
-      for (uint8_t k = 0; k < dd; ++k)
-      {
-        const sunindextype idx = ofs + k;
-
-        rrS_arr[st->st_M + i * dd + k] = yyS_arr[idx + 1] - ypS_arr[idx];
-      }
+      rrS_arr[rr_ofs + j] = yyS_arr[var + 1] - ypS_arr[var];
     }
   }
 
   /* Evaluate user supplied sensitivity residual function. */
 
-  const int flag = dd_mem->dd_resS(Ns, t, yy, rr, yyS, resvalS,
+  const int flag = dd_mem->dd_resS(Ns, t, yy, rr, yyS, rrS,
                                    dd_mem->dd_user_data, tmp1, tmp2, tmp3);
 
   return flag;
@@ -730,33 +924,71 @@ static int DDResSWrapper(int Ns, sunrealtype t, N_Vector yy,
 
 int DDSensReInit(DDMem dd_mem, int ism, N_Vector* YS0)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
+
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (YS0 == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
 
   IDAMem ida_mem = dd_mem->ida_mem;
   N_Vector* ypS  = dd_mem->dd_ypS;
 
   for (int i = 0; i < ida_mem->ida_Ns; ++i)
   {
-    DDSetYpFromY(dd_mem->dd_st, dd_mem->dd_pm, YS0[i], ypS[i]);
+    DDSetYpFromY(dd_mem->dd_pm, YS0[i], ypS[i]);
   }
 
-  return IDASensReInit(ida_mem, ism, YS0, ypS);
+  if (IDASensReInit(ida_mem, ism, YS0, ypS) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return DD_SUCCESS;
 }
 
 /* --------------------------------------------------------------------------
  * DDSolveF
  * -------------------------------------------------------------------------- */
 
-int DDSolveF(DDMem dd_mem, sunrealtype tout, sunrealtype tret[static 1],
-             N_Vector Y, int itask, int ncheck[static 1])
+int DDSolveF(DDMem dd_mem,
+             sunrealtype tout,
+             sunrealtype tret[static 1],
+             N_Vector Y,
+             int itask,
+             int ncheck[static 1])
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
+
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (Y == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
 
   IDAMem ida_mem = dd_mem->ida_mem;
   N_Vector yp    = dd_mem->dd_yp;
 
   int flag = IDASolveF(ida_mem, tout, tret, Y, yp, itask, ncheck);
-  if (flag < 0) { return flag; }
+  if (flag < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
 
   /* Update the current time for the current checkpoint. */
 
@@ -777,9 +1009,21 @@ int DDSolveF(DDMem dd_mem, sunrealtype tout, sunrealtype tret[static 1],
 
 int DDCalcIC(DDMem dd_mem, int iocopt, sunrealtype tout1)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
 
-  return IDACalcIC(dd_mem->ida_mem, iocopt, tout1);
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (IDACalcIC(dd_mem->ida_mem, iocopt, tout1) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return DD_SUCCESS;
 }
 
 /* --------------------------------------------------------------------------
@@ -788,39 +1032,48 @@ int DDCalcIC(DDMem dd_mem, int iocopt, sunrealtype tout1)
 
 int DDAdjInit(DDMem dd_mem, long Nd, int interpType)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
+
+  SUNFunctionBegin(dd_mem->sunctx);
 
   IDAMem ida_mem = dd_mem->ida_mem;
 
-  int flag = IDAAdjInit(ida_mem, Nd, interpType);
-  if (flag < 0) { return flag; }
-
-  dd_mem->dd_probBs = DynArrCreate_ProbB(INITIAL_DYN_ARR_CAPACITY);
-
-  if (dd_mem->dd_probBs == NULL)
+  if (IDAAdjInit(ida_mem, Nd, interpType) < 0)
   {
-    DDAdjFree(dd_mem);
-    return DD_ERR_UNKNOWN;
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
   }
 
-  PivMem* pm     = dd_mem->dd_pm;
+  dd_mem->dd_probBs = DynArrCreate_ProbB(INITIAL_DYN_ARR_CAPACITY);
+  if (dd_mem->dd_probBs == NULL)
+  {
+    DDHandleErr(SUN_ERR_MEM_FAIL);
+    return SUN_ERR_MEM_FAIL;
+  }
+
+  PivMem* pm = dd_mem->dd_pm;
+
   dd_mem->ck_mem = DDckpntCreate(dd_mem->dd_t0, pm->pm_DAE_N, pm->pm_spec);
   if (dd_mem->ck_mem == NULL)
   {
-    DDAdjFree(dd_mem);
-    return DD_ERR_UNKNOWN;
+    DDHandleErr(SUN_ERR_MEM_FAIL);
+    return SUN_ERR_MEM_FAIL;
   }
 
   dd_mem->dd_tinitial = ida_mem->ida_tn;
 
-  return flag;
+  return DD_SUCCESS;
 }
 
 /* --------------------------------------------------------------------------
  * DDAdjFree
  * -------------------------------------------------------------------------- */
 
-void DDAdjFree(DDMem dd_mem)
+static void DDAdjCleanup(DDMem dd_mem)
 {
   if (dd_mem->dd_probBs != NULL)
   {
@@ -832,9 +1085,9 @@ void DDAdjFree(DDMem dd_mem)
   }
   dd_mem->dd_probBs = NULL;
 
-  /* Unwind IDA checkpoints from DD checkpoints and attach them to the IDA
-     Adjoint memory before calling `IDAAdjFree` to make sure that they are
-     all free'ed. */
+  /* Collect IDA checkpoints from DD checkpoints and attach them to the IDA
+     Adjoint memory before calling to make sure that they are all free'ed when
+     calling `IDAAdjFree`. */
 
   IDAMem ida_mem = dd_mem->ida_mem;
 
@@ -874,13 +1127,19 @@ void DDAdjFree(DDMem dd_mem)
 
       ck->ck_next = ck_mem->ida_ck_mem;
     }
-
-    IDAAdjFree(&ida_mem);
   }
 
   DDckpntDestroy(&dd_mem->ck_mem);
 
   dd_mem->ck_mem_cur = NULL;
+}
+
+void DDAdjFree(DDMem dd_mem)
+{
+  if (dd_mem == NULL) { return; }
+
+  DDAdjCleanup(dd_mem);
+  IDAAdjFree(dd_mem->ida_mem);
 }
 
 /* --------------------------------------------------------------------------
@@ -889,19 +1148,47 @@ void DDAdjFree(DDMem dd_mem)
 
 int DDCreateB(DDMem dd_mem, int which[static 1])
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
 
-  return IDACreateB(dd_mem->ida_mem, which);
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (IDACreateB(dd_mem->ida_mem, which) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return DD_SUCCESS;
 }
 
 /* --------------------------------------------------------------------------
  * DDInitB
  * -------------------------------------------------------------------------- */
 
-int DDInitB(DDMem dd_mem, int which, DDResFnB resB, sunrealtype tB0,
-            N_Vector yyB0, N_Vector ypB0)
+int DDInitB(DDMem dd_mem,
+            int which,
+            DDResFnB resB,
+            sunrealtype tB0,
+            N_Vector yyB0,
+            N_Vector ypB0)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
+
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (resB == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
 
   IDAMem ida_mem = dd_mem->ida_mem;
 
@@ -912,29 +1199,53 @@ int DDInitB(DDMem dd_mem, int which, DDResFnB resB, sunrealtype tB0,
 
   if ((sign * (tB0 - ti) < ZERO) || (sign * (tn - tB0) < ZERO))
   {
-    return IDA_BAD_TB0;
+    DDHandleErr(SUN_ERR_ARG_OUTOFRANGE);
+    return SUN_ERR_ARG_OUTOFRANGE;
+  }
+
+  if (yyB0 == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
+
+  if (ypB0 == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
   }
 
   ProbB pb = {.pb_which = which};
 
   pb.pb_data = malloc(sizeof(*pb.pb_data));
-  if (!pb.pb_data) { return DD_ERR_UNKNOWN; }
+  if (pb.pb_data == NULL)
+  {
+    DDHandleErr(SUN_ERR_MEM_FAIL);
+    return SUN_ERR_MEM_FAIL;
+  }
 
   pb.pb_data->db_resB      = resB;
   pb.pb_data->db_user_data = NULL;
 
-  int flag = IDAInitB(ida_mem, which, DDResBWrapper, tB0, yyB0, ypB0);
-  if (flag < 0)
+  if (IDAInitB(ida_mem, which, DDResBWrapper, tB0, yyB0, ypB0) < 0)
   {
     ProbBDestroy(pb);
-    return flag;
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
   }
 
-  if ((IDASetUserDataB(ida_mem, which, pb.pb_data) < 0) ||
-      !DynArrPushBack_ProbB(dd_mem->dd_probBs, pb))
+  if (IDASetUserDataB(ida_mem, which, pb.pb_data) < 0)
   {
     ProbBDestroy(pb);
-    return DD_ERR_UNKNOWN;
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  if (!DynArrPushBack_ProbB(dd_mem->dd_probBs, pb))
+  {
+    ProbBDestroy(pb);
+    DDHandleErr(SUN_ERR_OP_FAIL);
+    return SUN_ERR_OP_FAIL;
   }
 
   /* We re-init the IDA adjoint problem at each pivot, which changes
@@ -944,15 +1255,20 @@ int DDInitB(DDMem dd_mem, int which, DDResFnB resB, sunrealtype tB0,
 
   dd_mem->ck_mem_cur = dd_mem->ck_mem;
 
-  return flag;
+  return DD_SUCCESS;
 }
 
-static int DDResBWrapper(sunrealtype t, N_Vector yy,
-                         SUNDIALS_MAYBE_UNUSED N_Vector yp, N_Vector yyB,
-                         N_Vector ypB, N_Vector rrB, void* user_dataB)
+static int DDResBWrapper(sunrealtype t,
+                         N_Vector yy,
+                         SUNDIALS_MAYBE_UNUSED N_Vector yp,
+                         N_Vector yyB,
+                         N_Vector ypB,
+                         N_Vector rrB,
+                         void* user_dataB)
 {
   DataB* data = (DataB*)user_dataB;
-  assert(data);
+
+  DDAssertWithCtx(data != NULL, SUN_ERR_ARG_CORRUPT, NULL);
 
   /* Evaluate user supplied residual function. */
   return data->db_resB(t, yy, yyB, ypB, rrB, data->db_user_data);
@@ -964,7 +1280,13 @@ static int DDResBWrapper(sunrealtype t, N_Vector yy,
 
 int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
+
+  SUNFunctionBegin(dd_mem->sunctx);
 
   IDAMem ida_mem        = dd_mem->ida_mem;
   IDAadjMem ida_adj_mem = ida_mem->ida_adj_mem;
@@ -973,7 +1295,17 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
 
   int sign = (ida_adj_mem->ia_tfinal - dd_mem->dd_tinitial > ZERO) ? 1 : -1;
 
-  if (sign * (tBout - dd_mem->dd_tinitial) < ZERO) { return IDA_BAD_TB0; }
+  if (sign * (tBout - dd_mem->dd_tinitial) < ZERO)
+  {
+    DDHandleErr(SUN_ERR_ARG_OUTOFRANGE);
+    return SUN_ERR_ARG_OUTOFRANGE;
+  }
+
+  if ((itaskB != IDA_ONE_STEP) && (itaskB != IDA_NORMAL))
+  {
+    DDHandleErr(SUN_ERR_ARG_OUTOFRANGE);
+    return SUN_ERR_ARG_OUTOFRANGE;
+  }
 
   /* Starting from the current pivot checkpoint, loop through checkpoints until
      the current time of any of the backwards problems comes after the start
@@ -1009,9 +1341,9 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
     if (got_ckpnt) { break; }
   }
 
-  assert(ck_mem);
+  SUNAssert(ck_mem != NULL, SUN_ERR_OP_FAIL);
 
-  int flag = DD_ERR_UNKNOWN;
+  int flag = SUN_ERR_UNREACHABLE;
 
   while (SUNTRUE)
   {
@@ -1019,10 +1351,10 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
 
     if (ck_mem != dd_mem->ck_mem_cur)
     {
-      if (PPUpdateDDSpec(ck_mem->ck_spec, dd_mem->dd_pm) < 0)
+      if (PPUpdateDDSpec(dd_mem->dd_st, ck_mem->ck_spec, dd_mem->dd_pm) < 0)
       {
-        flag = DD_ERR_UNKNOWN;
-        break;
+        DDHandleErr(SUN_ERR_OP_FAIL);
+        return SUN_ERR_OP_FAIL;
       }
 
       /* Set the initial time step for the IDA solver becase it is resetted on
@@ -1047,6 +1379,11 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
       sunrealtype t     = sign * (ck_t0 - tBout) <= ZERO ? tBout : ck_t0;
 
       flag = IDASolveB(ida_mem, t, IDA_NORMAL);
+      if (flag < 0)
+      {
+        DDHandleErr(DD_ERR_IDA_ERR);
+        return DD_ERR_IDA_ERR;
+      }
 
       /* If there was an error, we reached `tBout`, or we ran out of checkpoints
          we are done. */
@@ -1061,13 +1398,15 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
     else if (itaskB == IDA_ONE_STEP)
     {
       flag = IDASolveB(ida_mem, tBout, IDA_ONE_STEP);
+      if (flag < 0)
+      {
+        DDHandleErr(DD_ERR_IDA_ERR);
+        return DD_ERR_IDA_ERR;
+      }
+
       break;
     }
-    else
-    {
-      flag = IDA_ILL_INPUT;
-      break;
-    }
+    else { return SUN_ERR_UNREACHABLE; }
   }
 
   return flag;
@@ -1079,63 +1418,204 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
 
 int DDCalcICB(DDMem dd_mem, int which, sunrealtype tBout1, N_Vector Y)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
 
-  return IDACalcICB(dd_mem->ida_mem, which, tBout1, Y,
-                    /* Not used by the residual function. */ Y);
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (Y == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
+
+  if (IDACalcICB(dd_mem->ida_mem, which, tBout1, Y,
+                 /* Not used by the residual function. */ Y) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return DD_SUCCESS;
 }
 
 /* --------------------------------------------------------------------------
  * DDSetJacFn
  * -------------------------------------------------------------------------- */
 
-/* int DDSetJacFn(DDMem dd_mem, DDLsJacFn jacf) */
-/* { */
-/*   if (dd_mem == NULL) { return DD_ERR_UNKNOWN; } */
+int DDSetJacFn(DDMem dd_mem, DDLsJacFn jacfn)
+{
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_DD_MEM_NULL;
+  }
 
-/*   int flag = IDASetJacFn(dd_mem->ida_mem, DDLsJacFnWrapper); */
-/*   if (flag < 0) { return flag; } */
+  SUNFunctionBegin(dd_mem->sunctx);
 
-/*   dd_mem->dd_jacf = jacf; */
+  if ((jacfn.id != DD_JAC_1) && (jacfn.id != DD_JAC_2))
+  {
+    DDHandleErr(SUN_ERR_ARG_OUTOFRANGE);
+    return SUN_ERR_ARG_OUTOFRANGE;
+  }
 
-/*   return flag; */
-/* } */
+  IDAMem ida_mem = dd_mem->ida_mem;
 
-/* static int DDLsJacFnWrapper(sunrealtype t, sunrealtype cj, N_Vector yy, */
-/*                             N_Vector yp, N_Vector rr, SUNMatrix J, */
-/*                             void* user_data, N_Vector tmp1, N_Vector tmp2, */
-/*                             N_Vector tmp3) */
-/* { */
-/*   const DDMem dd_mem = (DDMem)user_data; */
-/*   assert(dd_mem); */
-/*   const Structure* st  = dd_mem->dd_structure; */
-/*   const PivotState* ps = dd_mem->dd_pivot_state; */
+  if (jacfn.id == DD_JAC_1)
+  {
+    SUNMatrix J = dd_mem->dd_J;
 
-/*   /\* Compute differential differential residuals. *\/ */
-/*   const sunrealtype *yy_arr = N_VGetArrayPointer(yy), */
-/*                     *yp_arr = N_VGetArrayPointer(yp); */
+    if (J != NULL)
+    {
+      int flag              = SUN_SUCCESS;
+      const SUNMatrix_ID id = SUNMatGetID(J);
 
-/*   sunrealtype** rr_arr = N_; */
+      if (id == SUNMATRIX_DENSE)
+      {
+        flag = IDASetJacFn(ida_mem, DDLsJacFnWrapper1_Dense);
+      }
+      else if ((id == SUNMATRIX_SPARSE) && (SM_SPARSETYPE_S(J) == CSR_MAT))
+      {
+        flag = IDASetJacFn(ida_mem, DDLsJacFnWrapper1_CSR);
+      }
+      else
+      {
+        DDHandleErr(SUN_ERR_ARG_WRONGTYPE);
+        return SUN_ERR_ARG_WRONGTYPE;
+      }
 
-/*   for (sunindextype i = 0; i < ps->num_non_zero_spec_vars; ++i) */
-/*   { */
-/*     const sunindextype var = ps->non_zero_spec_vars[i], */
-/*                        ofs = st->acc_var_ofs[var]; */
+      if (flag < 0)
+      {
+        DDHandleErr(DD_ERR_IDA_ERR);
+        return DD_ERR_IDA_ERR;
+      }
+    }
 
-/*     const uint8_t dd = ps->spec[var]; */
-/*     for (uint8_t j = 0; j < dd; ++j) */
-/*     { */
-/*       const sunindextype idx = ofs + j; */
+    dd_mem->dd_jacfn1 = jacfn.fn.jacfn1;
+    dd_mem->dd_jacfn2 = NULL;
+  }
+  else if (jacfn.id == DD_JAC_2)
+  {
+    if (IDASetJacFn(ida_mem, DDLsJacFnWrapper2) < 0)
+    {
+      DDHandleErr(DD_ERR_IDA_ERR);
+      return DD_ERR_IDA_ERR;
+    }
 
-/*       rr_arr[st->num_eqns + i * dd + j] = yy_arr[idx + 1] - yp_arr[idx]; */
-/*     } */
-/*   } */
+    dd_mem->dd_jacfn1 = NULL;
+    dd_mem->dd_jacfn2 = jacfn.fn.jacfn2;
+  }
+  else { return SUN_ERR_UNREACHABLE; }
 
-/*   /\* Evaluate user supplied residual function. *\/ */
-/*   const int flag = dd_mem->dd_res(t, yy, resval, dd_mem->dd_user_data); */
+  return DD_SUCCESS;
+}
 
-/*   return flag; */
-/* } */
+static int DDLsJacFnWrapper1_Dense(sunrealtype t,
+                                   sunrealtype cj,
+                                   N_Vector yy,
+                                   SUNDIALS_MAYBE_UNUSED N_Vector yp,
+                                   N_Vector rr,
+                                   SUNMatrix J,
+                                   void* user_data,
+                                   N_Vector tmp1,
+                                   N_Vector tmp2,
+                                   N_Vector tmp3)
+{
+  const DDMem dd_mem = (DDMem)user_data;
+  const PivMem* pm   = dd_mem->dd_pm;
+
+  /* Compute lower part of the Jacobian containing rows for the differential
+     equations. */
+
+  const sunindextype N_diff  = pm->pm_N_diff;
+  const sunindextype row_ofs = SM_ROWS_D(J) - N_diff;
+
+  for (sunindextype i = 0; i < N_diff; ++i)
+  {
+    const sunindextype var = pm->pm_dvars[i];
+
+    SM_ELEMENT_D(J, row_ofs + i, var)     = -cj;
+    SM_ELEMENT_D(J, row_ofs + i, var + 1) = ONE;
+  }
+
+  /* Call user supplied Jacobian callback function. */
+
+  void* ud = dd_mem->dd_user_data;
+  int flag = dd_mem->dd_jacfn1(t, yy, rr, J, ud, tmp1, tmp2, tmp3);
+
+  return flag;
+}
+
+static int DDLsJacFnWrapper1_CSR(sunrealtype t,
+                                 sunrealtype cj,
+                                 N_Vector yy,
+                                 SUNDIALS_MAYBE_UNUSED N_Vector yp,
+                                 N_Vector rr,
+                                 SUNMatrix J,
+                                 void* user_data,
+                                 N_Vector tmp1,
+                                 N_Vector tmp2,
+                                 N_Vector tmp3)
+{
+  const DDMem dd_mem = (DDMem)user_data;
+  const PivMem* pm   = dd_mem->dd_pm;
+
+  /* Compute lower part of the Jacobian containing rows for the differential
+     equations. */
+
+  const sunindextype N_diff = pm->pm_N_diff;
+
+  sunindextype row = SM_ROWS_S(J) - N_diff, nnz = SM_NNZ_S(J) - 2 * N_diff;
+  for (sunindextype i = 0; i < N_diff; ++i)
+  {
+    const sunindextype var = pm->pm_dvars[i];
+
+    SM_INDEXVALS_S(J)[nnz] = var;
+    SM_DATA_S(J)[nnz]      = -cj;
+
+    SM_INDEXVALS_S(J)[nnz + 1] = var + 1;
+    SM_DATA_S(J)[nnz + 1]      = ONE;
+
+    SM_INDEXPTRS_S(J)[row] = nnz;
+
+    row += 1;
+    nnz += 2;
+  }
+
+  SM_INDEXPTRS_S(J)[row] = nnz;
+
+  /* Call user supplied Jacobian callback function. */
+
+  void* ud = dd_mem->dd_user_data;
+  int flag = dd_mem->dd_jacfn1(t, yy, rr, J, ud, tmp1, tmp2, tmp3);
+
+  return flag;
+}
+
+static int DDLsJacFnWrapper2(sunrealtype t,
+                             sunrealtype cj,
+                             N_Vector yy,
+                             SUNDIALS_MAYBE_UNUSED N_Vector yp,
+                             N_Vector rr,
+                             SUNMatrix J,
+                             void* user_data,
+                             N_Vector tmp1,
+                             N_Vector tmp2,
+                             N_Vector tmp3)
+{
+  const DDMem dd_mem = (DDMem)user_data;
+
+  /* Call user supplied Jacobian callback function. */
+
+  void* ud = dd_mem->dd_user_data;
+  int flag = dd_mem->dd_jacfn2(t, cj, yy, rr, J, dd_mem->dd_id, ud, tmp1, tmp2,
+                               tmp3);
+
+  return flag;
+}
 
 /* --------------------------------------------------------------------------
  * Remaining Setters and Getters
@@ -1143,45 +1623,116 @@ int DDCalcICB(DDMem dd_mem, int which, sunrealtype tBout1, N_Vector Y)
 
 void* DDGetIDAMem(DDMem dd_mem)
 {
-  if (dd_mem == NULL) { return NULL; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return NULL;
+  }
 
   return dd_mem->ida_mem;
 }
 
 int DDSetLinearSolver(DDMem dd_mem, SUNLinearSolver LS, SUNMatrix A)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
 
-  return IDASetLinearSolver(dd_mem->ida_mem, LS, A);
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (IDASetLinearSolver(dd_mem->ida_mem, LS, A) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  dd_mem->dd_J = A;
+
+  return DD_SUCCESS;
 }
 
 int DDSSTolerances(DDMem dd_mem, sunrealtype reltol, sunrealtype abstol)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
 
-  return IDASStolerances(dd_mem->ida_mem, reltol, abstol);
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (IDASStolerances(dd_mem->ida_mem, reltol, abstol) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return DD_SUCCESS;
 }
 
 int DDSetStopTime(DDMem dd_mem, sunrealtype tstop)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
 
-  return IDASetStopTime(dd_mem->ida_mem, tstop);
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (IDASetStopTime(dd_mem->ida_mem, tstop) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return DD_SUCCESS;
 }
 
 int DDSetUserData(DDMem dd_mem, void* user_data)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
 
   dd_mem->dd_user_data = user_data;
-  return IDA_SUCCESS;
+
+  return DD_SUCCESS;
 }
 
 int DDGetSens(DDMem dd_mem, sunrealtype* tret, N_Vector* YS)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
 
-  return IDAGetSens(dd_mem->ida_mem, tret, YS);
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (tret == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
+
+  if (YS == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
+
+  if (IDAGetSens(dd_mem->ida_mem, tret, YS) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return DD_SUCCESS;
 }
 
 char* DDGetReturnFlagName(long int flag)
@@ -1195,6 +1746,7 @@ char* DDGetReturnFlagName(long int flag)
   switch (flag)
   {
     DD_ERR_CODE_LIST(DD_ERR_EXPAND_TO_CASE)
+    SUN_ERR_CODE_LIST(DD_ERR_EXPAND_TO_CASE)
     default: free(buf); return IDAGetReturnFlagName(flag);
   }
 
@@ -1204,85 +1756,239 @@ char* DDGetReturnFlagName(long int flag)
 
 int DDGetConsistentIC(DDMem dd_mem, N_Vector Y)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
 
-  return IDAGetConsistentIC(dd_mem->ida_mem, Y, NULL);
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (Y == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
+
+  if (IDAGetConsistentIC(dd_mem->ida_mem, Y, NULL) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return DD_SUCCESS;
 }
 
 int DDGetSensConsistentIC(DDMem dd_mem, N_Vector* YS)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
 
-  return IDAGetSensConsistentIC(dd_mem->ida_mem, YS, NULL);
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (YS == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
+
+  if (IDAGetSensConsistentIC(dd_mem->ida_mem, YS, NULL) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return DD_SUCCESS;
 }
 
 int DDSetSensParams(DDMem dd_mem, sunrealtype* p, sunrealtype* pbar, int* plist)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
 
-  return IDASetSensParams(dd_mem->ida_mem, p, pbar, plist);
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (p == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
+
+  if (IDASetSensParams(dd_mem->ida_mem, p, pbar, plist) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return DD_SUCCESS;
 }
 
 int DDSensEEtolerances(DDMem dd_mem)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
 
-  return IDASensEEtolerances(dd_mem->ida_mem);
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (IDASensEEtolerances(dd_mem->ida_mem) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return DD_SUCCESS;
 }
 
 int DDSetLinearSolverB(DDMem dd_mem, int which, SUNLinearSolver LS, SUNMatrix A)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
 
-  return IDASetLinearSolverB(dd_mem->ida_mem, which, LS, A);
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (LS == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
+
+  if (A == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
+
+  if (IDASetLinearSolverB(dd_mem->ida_mem, which, LS, A) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return DD_SUCCESS;
 }
 
-int DDSStolerancesB(DDMem dd_mem, int which, sunrealtype reltolB,
-                    sunrealtype abstolB)
+int DDSStolerancesB(DDMem dd_mem, int which, sunrealtype reltolB, sunrealtype abstolB)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
 
-  return IDASStolerancesB(dd_mem->ida_mem, which, reltolB, abstolB);
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (IDASStolerancesB(dd_mem->ida_mem, which, reltolB, abstolB) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return DD_SUCCESS;
 }
 
 int DDSetUserDataB(DDMem dd_mem, int which, void* user_dataB)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
+
+  SUNFunctionBegin(dd_mem->sunctx);
 
   DynArr_ProbB* pbs = dd_mem->dd_probBs;
 
-  int flag = IDA_ILL_INPUT;
+  int flag = SUN_ERR_ARG_OUTOFRANGE;
   for (size_t i = 0; i < DA_LENGTH(pbs); ++i)
   {
     if (DA_Ith(pbs, i).pb_which == which)
     {
       DA_Ith(pbs, i).pb_data->db_user_data = user_dataB;
 
-      flag = IDA_SUCCESS;
+      flag = SUN_SUCCESS;
     }
   }
+
+  if (flag < 0) { DDHandleErr(flag); }
 
   return flag;
 }
 
 int DDSetIdB(DDMem dd_mem, int which, N_Vector idB)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
 
-  return IDASetIdB(dd_mem->ida_mem, which, idB);
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (idB == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
+
+  if (IDASetIdB(dd_mem->ida_mem, which, idB) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return DD_SUCCESS;
 }
 
-int DDGetB(DDMem dd_mem, int which, sunrealtype tret[static 1], N_Vector yyB,
+int DDGetB(DDMem dd_mem,
+           int which,
+           sunrealtype tret[static 1],
+           N_Vector yyB,
            N_Vector ypB)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
 
-  return IDAGetB(dd_mem->ida_mem, which, tret, yyB, ypB);
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (IDAGetB(dd_mem->ida_mem, which, tret, yyB, ypB) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return DD_SUCCESS;
 }
 
 int DDGetConsistentICB(DDMem dd_mem, int which, N_Vector yyB0, N_Vector ypB0)
 {
-  if (dd_mem == NULL) { return DD_ERR_UNKNOWN; }
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
 
-  return IDAGetConsistentICB(dd_mem->ida_mem, which, yyB0, ypB0);
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (IDAGetConsistentICB(dd_mem->ida_mem, which, yyB0, ypB0) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return DD_SUCCESS;
 }

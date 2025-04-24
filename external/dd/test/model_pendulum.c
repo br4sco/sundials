@@ -7,7 +7,9 @@
 #include <sundials/sundials_matrix.h>
 #include <sundials/sundials_nvector.h>
 #include <sunlinsol/sunlinsol_dense.h>
+#include <sunlinsol/sunlinsol_klu.h>
 #include <sunmatrix/sunmatrix_dense.h>
+#include <sunmatrix/sunmatrix_sparse.h>
 
 #include "dd.h"
 #include "matrix.h"
@@ -22,8 +24,26 @@
 #define FOUR SUN_RCONST(4.0)
 #define FIVE SUN_RCONST(5.0)
 
-int main(void)
+int main(int argc, char* argv[])
 {
+  enum
+  {
+    NONE  = 'n',
+    DENSE = 'd',
+    CSR   = 'r',
+    CSC   = 'c'
+  } mat_type;
+
+  TEST_ASSERT(argc > 1);
+  switch (argv[1][0])
+  {
+  case NONE: mat_type = NONE; break;
+  case DENSE: mat_type = DENSE; break;
+  case CSR: mat_type = CSR; break;
+  case CSC: mat_type = CSC; break;
+  default: TEST_ASSERT(0);
+  }
+
   const sunrealtype t0    = ZERO;
   const sunrealtype tstep = SUN_RCONST(0.1);
   const sunrealtype tout  = SUN_RCONST(100.0);
@@ -33,16 +53,18 @@ int main(void)
                            PENDULUM_EQN_NAMES, PENDULUM_VAR_NAMES);
   TEST_ASSERT(st);
 
+  const sunindextype N = st->st_N;
+
   /* Setup Sundials context. */
-  SUNContext ctx;
-  TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &ctx) == SUN_SUCCESS);
+  SUNContext sunctx;
+  TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &sunctx) == SUN_SUCCESS);
 
   /* Allocate state and Jacobian data. */
-  SUNMatrix J0 = SUNDenseMatrix(st->st_DAE_N, st->st_DAE_N, ctx);
+  SUNMatrix J0 = SUNDenseMatrix(st->st_DAE_N, st->st_DAE_N, sunctx);
   TEST_ASSERT(J0);
-  DDMatrix* jac0 = DDMatWrapDense(J0);
-  TEST_ASSERT(jac0);
-  N_Vector Y = N_VNew_Serial(st->st_N, ctx);
+  DDMatrix* dd_J0 = DDMatWrapDense(J0);
+  TEST_ASSERT(dd_J0);
+  N_Vector Y = N_VNew_Serial(N, sunctx);
   TEST_ASSERT(Y);
 
   /* Set DAE parameters. */
@@ -58,13 +80,13 @@ int main(void)
 
   /* Compute J0 at the initial time. */
   TEST_ASSERT(SUNMatZero(J0) == SUN_SUCCESS);
-  TEST_ASSERT(PendulumJacf0(t0, Y, jac0, data) == 0);
+  TEST_ASSERT(PendulumJacf0(t0, Y, dd_J0, data) == 0);
 
   /* Create solver session. */
-  DDMem dd_mem = DDCreate(ctx);
+  DDMem dd_mem = DDCreate(sunctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(DDInit(dd_mem, st, SUN_RCONST(0.0), PendulumJacf0, jac0,
+  TEST_ASSERT(DDInit(dd_mem, st, SUN_RCONST(0.0), PendulumJacf0, dd_J0,
                      PendulumRes, t0, Y) == IDA_SUCCESS);
 
   TEST_ASSERT(DDSetUserData(dd_mem, data) == IDA_SUCCESS);
@@ -73,18 +95,57 @@ int main(void)
               IDA_SUCCESS);
 
   /* Setup and set linear solver. */
-  SUNMatrix A = SUNDenseMatrix(st->st_N, st->st_N, ctx);
-  TEST_ASSERT(A);
-  SUNLinearSolver LS = SUNLinSol_Dense(Y, A, ctx);
-  TEST_ASSERT(LS);
+  SUNMatrix J        = NULL;
+  SUNLinearSolver LS = NULL;
 
-  TEST_ASSERT(DDSetLinearSolver(dd_mem, LS, A) == IDA_SUCCESS);
+  switch (mat_type)
+  {
+  case NONE:
+  case DENSE:
+    J = SUNDenseMatrix(N, N, sunctx);
+    TEST_ASSERT(J);
+    LS = SUNLinSol_Dense(Y, J, sunctx);
+    TEST_ASSERT(LS);
+    break;
+  case CSR:
+  case CSC:
+    J = SUNSparseMatrix(N, N, PENDULUM_JAC_NNZ + 4,
+                        mat_type == CSR ? CSR_MAT : CSC_MAT, sunctx);
+    TEST_ASSERT(J);
+    LS = SUNLinSol_KLU(Y, J, sunctx);
+    TEST_ASSERT(LS);
+    break;
+  }
+
+  TEST_ASSERT(DDSetLinearSolver(dd_mem, LS, J) == IDA_SUCCESS);
+
+  switch (mat_type)
+  {
+  case NONE: break;
+  case DENSE:
+    TEST_ASSERT(DDSetJacFn(dd_mem, (DDLsJacFn){.id = DD_JAC_1,
+                                               .fn.jacfn1 = PendulumJacfn_Dense}) ==
+                IDA_SUCCESS);
+    break;
+  case CSR:
+    TEST_ASSERT(DDSetJacFn(dd_mem, (DDLsJacFn){.id = DD_JAC_1,
+                                               .fn.jacfn1 = PendulumJacfn_CSR}) ==
+                IDA_SUCCESS);
+    break;
+  case CSC:
+    TEST_ASSERT(DDSetJacFn(dd_mem, (DDLsJacFn){.id = DD_JAC_2,
+                                               .fn.jacfn2 = PendulumJacfn_CSC}) ==
+                IDA_SUCCESS);
+    break;
+  }
 
   /* Set stop time */
   TEST_ASSERT(DDSetStopTime(dd_mem, tout) == IDA_SUCCESS);
 
   /* Set up result file */
-  FILE* file = fopen("pendulum.csv", "w");
+  char filename[25];
+  sprintf(filename, "pendulum_%c.csv", mat_type);
+  FILE* file = fopen(filename, "w");
   TEST_ASSERT(file);
 
   /* Solve and output solution. */
@@ -112,13 +173,13 @@ int main(void)
 
   /* Cleanup */
   DDFree(&dd_mem);
-  DDMatDestroy(jac0);
+  DDMatDestroy(dd_J0);
   N_VDestroy(Y);
   STDestroy(st);
-  SUNContext_Free(&ctx);
+  SUNContext_Free(&sunctx);
   SUNLinSolFree(LS);
+  SUNMatDestroy(J);
   SUNMatDestroy(J0);
-  SUNMatDestroy(A);
   fclose(file);
   free(data);
 

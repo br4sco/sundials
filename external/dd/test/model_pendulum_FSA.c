@@ -41,8 +41,8 @@ int main(int argc, char* argv[])
   /* Allocate state and Jacobian data. */
   SUNMatrix J0 = SUNDenseMatrix(st->st_DAE_N, st->st_DAE_N, ctx);
   TEST_ASSERT(J0);
-  DDMatrix* jac0 = DDMatWrapDense(J0);
-  TEST_ASSERT(jac0);
+  DDMatrix* dd_J0 = DDMatWrapDense(J0);
+  TEST_ASSERT(dd_J0);
   N_Vector Y = N_VNew_Serial(st->st_N, ctx);
   TEST_ASSERT(Y);
 
@@ -64,14 +64,14 @@ int main(int argc, char* argv[])
 
   /* Compute J0 at the initial time. */
   TEST_ASSERT(SUNMatZero(J0) == SUN_SUCCESS);
-  TEST_ASSERT(PendulumJacf0(t0, Y, jac0, data) == 0);
+  TEST_ASSERT(PendulumJacf0(t0, Y, dd_J0, data) == 0);
 
   /* Create solver session. */
   DDMem dd_mem = DDCreate(ctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(DDInit(dd_mem, st, ZERO, PendulumJacf0, jac0, PendulumRes,
-                     t0, Y) == IDA_SUCCESS);
+  TEST_ASSERT(DDInit(dd_mem, st, ZERO, PendulumJacf0, dd_J0, PendulumRes, t0,
+                     Y) == IDA_SUCCESS);
 
   TEST_ASSERT(DDSensInit(dd_mem, PENDULUM_NP, IDA_STAGGERED,
                          analytic_sens_residual ? PendulumResS : NULL,
@@ -87,12 +87,12 @@ int main(int argc, char* argv[])
   TEST_ASSERT(DDSetSensParams(dd_mem, data->param, pbar, NULL) == IDA_SUCCESS)
 
   /* Setup and set linear solver. */
-  SUNMatrix A = SUNDenseMatrix(st->st_N, st->st_N, ctx);
-  TEST_ASSERT(A);
-  SUNLinearSolver LS = SUNLinSol_Dense(Y, A, ctx);
+  SUNMatrix J = SUNDenseMatrix(st->st_N, st->st_N, ctx);
+  TEST_ASSERT(J);
+  SUNLinearSolver LS = SUNLinSol_Dense(Y, J, ctx);
   TEST_ASSERT(LS);
 
-  TEST_ASSERT(DDSetLinearSolver(dd_mem, LS, A) == IDA_SUCCESS);
+  TEST_ASSERT(DDSetLinearSolver(dd_mem, LS, J) == IDA_SUCCESS);
 
   /* Set stop time */
   TEST_ASSERT(DDSetStopTime(dd_mem, tout) == IDA_SUCCESS);
@@ -139,14 +139,14 @@ int main(int argc, char* argv[])
 
   /* Cleanup */
   DDFree(&dd_mem);
-  DDMatDestroy(jac0);
+  DDMatDestroy(dd_J0);
   N_VDestroy(Y);
   N_VDestroyVectorArray(YS, PENDULUM_NP);
   STDestroy(st);
   SUNContext_Free(&ctx);
   SUNLinSolFree(LS);
+  SUNMatDestroy(J);
   SUNMatDestroy(J0);
-  SUNMatDestroy(A);
   fclose(file);
   free(data);
 

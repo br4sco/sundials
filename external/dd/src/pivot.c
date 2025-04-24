@@ -8,6 +8,7 @@
 #include "matrix.h"
 #include "pivot.h"
 #include "structure.h"
+#include "sundials/sundials_errors.h"
 
 PivMem* PMCreate(SUNContext sunctx, const Structure st[static 1],
                  const DDMatrix A[static 1])
@@ -25,29 +26,33 @@ PivMem* PMCreate(SUNContext sunctx, const Structure st[static 1],
   pm->pm_DAE_N = N;
   pm->pm_K     = K;
 
-  pm->pm_spec = calloc(N, sizeof(uint8_t));
+  pm->pm_spec = calloc(N, sizeof(*pm->pm_spec));
   SUNAssertNull(pm->pm_spec, SUN_ERR_MALLOC_FAIL);
 
   pm->pm_NNZ_spec = 0;
-  pm->pm_NZ_spec  = malloc(N * sizeof(sunindextype));
+  pm->pm_NZ_spec  = malloc(N * sizeof(*pm->pm_NZ_spec));
   SUNAssertNull(pm->pm_NZ_spec, SUN_ERR_MALLOC_FAIL);
 
-  pm->pm_known = malloc(K * sizeof(sunbooleantype*));
+  pm->pm_N_diff = st->st_N - st->st_M;
+  pm->pm_dvars  = malloc(pm->pm_N_diff * sizeof(*pm->pm_dvars));
+  SUNAssertNull(pm->pm_dvars, SUN_ERR_MALLOC_FAIL);
+
+  pm->pm_known = malloc(K * sizeof(*pm->pm_known));
   SUNAssertNull(pm->pm_known, SUN_ERR_MALLOC_FAIL);
 
-  pm->pm_vars = malloc(K * sizeof(sunindextype*));
+  pm->pm_vars = malloc(K * sizeof(*pm->pm_vars));
   SUNAssertNull(pm->pm_vars, SUN_ERR_MALLOC_FAIL);
 
-  pm->pm_jacs = malloc(K * sizeof(DDMatrix*));
-  SUNAssertNull(pm->pm_jacs, SUN_ERR_MALLOC_FAIL);
+  pm->pm_Jk = malloc(K * sizeof(DDMatrix*));
+  SUNAssertNull(pm->pm_Jk, SUN_ERR_MALLOC_FAIL);
 
   pm->pm_wss = malloc(K * sizeof(DDMatrixWorkspace*));
   SUNAssertNull(pm->pm_wss, SUN_ERR_MALLOC_FAIL);
 
-  pm->pm_knowndata = calloc(K * N, sizeof(sunbooleantype));
+  pm->pm_knowndata = calloc(K * N, sizeof(*pm->pm_knowndata));
   SUNAssertNull(pm->pm_knowndata, SUN_ERR_MALLOC_FAIL);
 
-  pm->pm_varsdata = calloc(st->st_N, sizeof(sunindextype));
+  pm->pm_varsdata = calloc(st->st_N, sizeof(*pm->pm_varsdata));
   SUNAssertNull(pm->pm_varsdata, SUN_ERR_MALLOC_FAIL);
 
   sunindextype ofs = 0;
@@ -62,14 +67,14 @@ PivMem* PMCreate(SUNContext sunctx, const Structure st[static 1],
 
     if (Mk == 0)
     {
-      pm->pm_jacs[k] = NULL;
+      pm->pm_Jk[k] = NULL;
       pm->pm_wss[k]  = NULL;
     }
     else
     {
       DDMatrix* A_sub = DDMatCloneSub(A, Mk, I, Nk, J);
       SUNCheckLastErrNull();
-      pm->pm_jacs[k] = A_sub;
+      pm->pm_Jk[k] = A_sub;
 
       DDMatrixWorkspace* ws = DDMatCreateWS(A_sub);
       SUNCheckLastErrNull();
@@ -102,6 +107,12 @@ void PMDestroy(PivMem* pm)
     pm->pm_NZ_spec = NULL;
   }
 
+  if (pm->pm_dvars != NULL)
+  {
+    free(pm->pm_dvars);
+    pm->pm_dvars = NULL;
+  }
+
   if (pm->pm_known != NULL)
   {
     for (size_t k = 0; k < K; ++k) { pm->pm_known[k] = NULL; }
@@ -116,20 +127,20 @@ void PMDestroy(PivMem* pm)
     pm->pm_vars = NULL;
   }
 
-  if (pm->pm_jacs != NULL)
+  if (pm->pm_Jk != NULL)
   {
     for (size_t k = 0; k < K; ++k)
     {
-      DDMatrix* submat = pm->pm_jacs[k];
+      DDMatrix* submat = pm->pm_Jk[k];
       if (submat)
       {
         SUNMatDestroy(DDMatGetSUNMat(submat));
         DDMatDestroy(submat);
       }
-      pm->pm_jacs[k] = NULL;
+      pm->pm_Jk[k] = NULL;
     }
-    free(pm->pm_jacs);
-    pm->pm_jacs = NULL;
+    free(pm->pm_Jk);
+    pm->pm_Jk = NULL;
   }
 
   if (pm->pm_wss != NULL)
@@ -207,7 +218,7 @@ SUNErrCode PPivot(const Structure st[static 1], const DDMatrix A[static 1],
         if (varofs[vars[l]] == 0) { pm_known[vars[l]] = SUNTRUE; }
       }
 
-      const DDMatrix* submat = pm->pm_jacs[k];
+      const DDMatrix* submat = pm->pm_Jk[k];
       SUNCheckCall(DDCopySub(A, submat, Mk, eqns, Nk, vars));
 
       const DDMatrixWorkspace* ws = pm->pm_wss[k];
@@ -249,6 +260,27 @@ static sunindextype ComputeNZSpec(sunindextype N, const uint8_t spec[N],
   return len;
 }
 
+static SUNErrCode ComputeDiffVars(const Structure st[static 1],
+                                  PivMem pm[static 1])
+{
+  SUNFunctionBegin(pm->sunctx);
+
+  sunindextype ofs = 0;
+  for (sunindextype i = 0; i < pm->pm_NNZ_spec; ++i)
+  {
+    const sunindextype var = pm->pm_NZ_spec[i], varofs = st->st_acc_varofs[var];
+    const uint8_t dd = pm->pm_spec[var];
+    for (uint8_t j = 0; j < dd; ++j)
+    {
+      SUNAssert(ofs < pm->pm_N_diff, SUN_ERR_ARG_OUTOFRANGE);
+      pm->pm_dvars[ofs] = varofs + j;
+      ofs++;
+    }
+  }
+
+  return SUN_SUCCESS;
+}
+
 SUNErrCode PPComputeDDSpec(const Structure st[static 1], PivMem pm[static 1])
 {
   SUNFunctionBegin(pm->sunctx);
@@ -267,14 +299,19 @@ SUNErrCode PPComputeDDSpec(const Structure st[static 1], PivMem pm[static 1])
   }
 
   pm->pm_NNZ_spec = ComputeNZSpec(st->st_DAE_N, pm->pm_spec, pm->pm_NZ_spec);
+  SUNCheckCall(ComputeDiffVars(st, pm));
 
   return SUN_SUCCESS;
 }
 
-SUNErrCode PPUpdateDDSpec(const uint8_t spec[static 1], PivMem pm[static 1])
+SUNErrCode PPUpdateDDSpec(const Structure st[static 1],
+                          const uint8_t spec[static 1], PivMem pm[static 1])
 {
-  memcpy(pm->pm_spec, spec, pm->pm_DAE_N * sizeof(uint8_t));
+  SUNFunctionBegin(pm->sunctx);
+
+  memcpy(pm->pm_spec, spec, pm->pm_DAE_N * sizeof(*spec));
   pm->pm_NNZ_spec = ComputeNZSpec(pm->pm_DAE_N, pm->pm_spec, pm->pm_NZ_spec);
+  SUNCheckCall(ComputeDiffVars(st, pm));
 
   return SUN_SUCCESS;
 }

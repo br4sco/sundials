@@ -2,10 +2,13 @@
 #define _DD_MATRIX_H
 
 #include <assert.h>
+#include <sundials/priv/sundials_errors_impl.h>
 #include <sundials/sundials_matrix.h>
 #include <sunmatrix/sunmatrix_sparse.h>
 
 #include "structure.h"
+#include "sundials/sundials_errors.h"
+#include "sundials/sundials_types.h"
 
 /** @file
  * @brief DD matrix defintions.
@@ -57,6 +60,10 @@ struct _DDMatrix_Ops
   SUNErrCode (*const copysub)(const DDMatrix[static 1], const DDMatrix[static 1],
                               sunindextype m, const sunindextype[static m],
                               sunindextype n, const sunindextype[static n]);
+  SUNErrCode (*const evalddjac)(const DDMatrix[static 1],
+                                const Structure[static 1], sunindextype NNZ_spec,
+                                const sunindextype[static NNZ_spec],
+                                const uint8_t[static 1], sunrealtype);
 };
 
 /* --------------------------------------------------------------------------
@@ -75,6 +82,8 @@ static inline SUNMatrix DDMatGetSUNMat(const DDMatrix self[static 1])
 /** @brief Create extended matrix workspace. */
 static inline DDMatrixWorkspace* DDMatCreateWS(const DDMatrix self[static 1])
 {
+  SUNFunctionBegin(DDMatGetSUNMat(self)->sunctx);
+  SUNCheckNull(self->ops->createworkspace, SUN_ERR_NOT_IMPLEMENTED);
   return self->ops->createworkspace(self);
 }
 
@@ -84,6 +93,8 @@ static inline SUNErrCode DDMatPivot(const DDMatrix self[static 1],
                                     sunrealtype tol, sunindextype n,
                                     sunindextype colpivots[static n])
 {
+  SUNFunctionBegin(DDMatGetSUNMat(self)->sunctx);
+  SUNCheck(self->ops->pivot, SUN_ERR_NOT_IMPLEMENTED);
   return self->ops->pivot(self, ws, tol, n, colpivots);
 }
 
@@ -94,18 +105,33 @@ static inline DDMatrix* DDMatCloneSub(const DDMatrix self[static 1],
                                       sunindextype n,
                                       const sunindextype cols[static n])
 {
+  SUNFunctionBegin(DDMatGetSUNMat(self)->sunctx);
+  SUNCheckNull(self->ops->clonesub, SUN_ERR_NOT_IMPLEMENTED);
   return self->ops->clonesub(self, m, rows, n, cols);
 }
 
 /** @brief Copies a submatrix. */
 static inline SUNErrCode DDCopySub(const DDMatrix self[static 1],
-                                   const DDMatrix extmat[static 1],
-                                   sunindextype m,
+                                   const DDMatrix A[static 1], sunindextype m,
                                    const sunindextype rows[static m],
                                    sunindextype n,
                                    const sunindextype cols[static n])
 {
-  return self->ops->copysub(self, extmat, m, rows, n, cols);
+  SUNFunctionBegin(DDMatGetSUNMat(self)->sunctx);
+  SUNCheck(self->ops->copysub, SUN_ERR_NOT_IMPLEMENTED);
+  return self->ops->copysub(self, A, m, rows, n, cols);
+}
+
+/** @brief Evaluates the part of the Jacobian related to pivoting DD
+    variables. */
+static inline SUNErrCode DDMatEvalDDJac(
+  const DDMatrix self[static 1], const Structure st[static 1],
+  sunindextype NNZ_spec, const sunindextype NZ_spec[static NNZ_spec],
+  const uint8_t spec[static 1], sunrealtype cj)
+{
+  SUNFunctionBegin(DDMatGetSUNMat(self)->sunctx);
+  SUNCheck(self->ops->evalddjac, SUN_ERR_NOT_IMPLEMENTED);
+  return self->ops->evalddjac(self, st, NNZ_spec, NZ_spec, spec, cj);
 }
 
 /* --------------------------------------------------------------------------
@@ -119,12 +145,15 @@ void DDMatWSDestroy(DDMatrixWorkspace*);
  * Dense DD Matrix
  * ========================================================================== */
 
-/** @brief Wraps a dense Sundials matrix in an extended matrix. */
+/** @brief Wraps a dense Sundials matrix in a DD matrix. */
 DDMatrix* DDMatWrapDense(const SUNMatrix);
 
 /* ==========================================================================
  * Sparse DD Matrix
  * ========================================================================== */
+
+/** @brief Wraps a sparse Sundials matrix in a DD matrix. */
+DDMatrix* DDMatWrapSparse(const SUNMatrix);
 
 /** @brief Creates a sparse matrix based on additional structural information. */
 SUNMatrix DDSparseSUNMatFromStructure(const Structure*, sunindextype, int,
