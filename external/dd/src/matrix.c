@@ -8,9 +8,6 @@
 #include "macros.h"
 #include "matrix.h"
 #include "sundials/sundials_types.h"
-#include "sunmatrix/sunmatrix_sparse.h"
-
-#define ONE SUN_RCONST(1.0);
 
 /* ==========================================================================
  * Generic DD Matrix
@@ -222,46 +219,12 @@ static SUNErrCode DDMatCopySub_Dense(const DDMatrix self[static 1],
   return SUN_SUCCESS;
 }
 
-static SUNErrCode DDMatEvalDDJac_Dense(const DDMatrix self[static 1],
-                                       const Structure st[static 1],
-                                       sunindextype NNZ_spec,
-                                       const sunindextype NZ_spec[static NNZ_spec],
-                                       const uint8_t spec[static 1],
-                                       sunrealtype cj)
-{
-  SUNMatrix A = DDMatGetSUNMat(self);
-  SUNFunctionBegin(A->sunctx);
-
-  SUNAssert(SUNMatGetID(A) == SUNMATRIX_DENSE, SUN_ERR_ARG_WRONGTYPE);
-  SUNCheck(SM_ROWS_D(A) == SM_COLUMNS_D(A), SUN_ERR_ARG_DIMSMISMATCH);
-  SUNCheck(SM_ROWS_D(A) == st->st_N, SUN_ERR_ARG_DIMSMISMATCH);
-  SUNCheck(st->st_M <= st->st_N, SUN_ERR_ARG_DIMSMISMATCH);
-
-  sunindextype row = st->st_M;
-  for (sunindextype i = 0; i < NNZ_spec; ++i)
-  {
-    const sunindextype var = NZ_spec[i], varofs = st->st_acc_varofs[var];
-    const uint8_t dd = spec[var];
-    for (int j = 0; j < dd; ++j)
-    {
-      const sunindextype col = varofs + j;
-
-      SM_ELEMENT_D(A, row, col)     = -cj;
-      SM_ELEMENT_D(A, row, col + 1) = ONE;
-
-      row += 1;
-    }
-  }
-
-  return SUN_SUCCESS;
-}
-
-static const DDMatrix_Ops DDMatrix_Ops_Dense = {.createworkspace =
-                                                  DDMatCreateWS_Dense,
-                                                .pivot    = DDMatPivot_Dense,
-                                                .clonesub = DDMatCloneSub_Dense,
-                                                .copysub  = DDMatCopySub_Dense,
-                                                .evalddjac = DDMatEvalDDJac_Dense};
+static const DDMatrix_Ops DDMatrix_Ops_Dense = {
+  .createworkspace = DDMatCreateWS_Dense,
+  .pivot           = DDMatPivot_Dense,
+  .clonesub        = DDMatCloneSub_Dense,
+  .copysub         = DDMatCopySub_Dense,
+};
 
 DDMatrix* DDMatWrapDense(const SUNMatrix A)
 {
@@ -282,71 +245,7 @@ DDMatrix* DDMatWrapDense(const SUNMatrix A)
  * Sparse DD Matrix
  * ========================================================================== */
 
-static SUNErrCode DDMatEvalDDJac_Sparse(const DDMatrix self[static 1],
-                                        const Structure st[static 1],
-                                        sunindextype NNZ_spec,
-                                        const sunindextype NZ_spec[static NNZ_spec],
-                                        const uint8_t spec[static 1],
-                                        sunrealtype cj)
-{
-  SUNMatrix A = DDMatGetSUNMat(self);
-  SUNFunctionBegin(A->sunctx);
-
-  SUNAssert(SUNMatGetID(A) == SUNMATRIX_SPARSE, SUN_ERR_ARG_WRONGTYPE);
-  SUNCheck(SM_ROWS_S(A) == SM_COLUMNS_S(A), SUN_ERR_ARG_DIMSMISMATCH);
-  SUNCheck(SM_ROWS_S(A) == st->st_N, SUN_ERR_ARG_DIMSMISMATCH);
-  SUNCheck(st->st_M <= st->st_N, SUN_ERR_ARG_DIMSMISMATCH);
-  SUNCheck((SM_SPARSETYPE_S(A) == CSR_MAT) || (SM_SPARSETYPE_S(A) == CSC_MAT),
-           SUN_ERR_ARG_OUTOFRANGE);
-
-  if (SM_SPARSETYPE_S(A) == CSR_MAT)
-  {
-    sunindextype row = st->st_M, nnz = SM_NNZ_S(A) - 2 * (st->st_N - row);
-    for (sunindextype i = 0; i < NNZ_spec; ++i)
-    {
-      const sunindextype var = NZ_spec[i];
-      const uint8_t dd       = spec[var];
-      for (uint8_t j = 0; j < dd; ++j)
-      {
-        const sunindextype col     = st->st_acc_varofs[var] + j;
-        SM_DATA_S(A)[nnz]          = -cj;
-        SM_DATA_S(A)[nnz + 1]      = ONE;
-        SM_INDEXVALS_S(A)[nnz]     = col;
-        SM_INDEXVALS_S(A)[nnz + 1] = col + 1;
-        SM_INDEXPTRS_S(A)[row]     = nnz;
-        row += 1;
-        nnz += 2;
-      }
-    }
-
-    SM_INDEXPTRS_S(A)[row] = nnz;
-  }
-  else
-  {
-    for (sunindextype i = 0; i < NNZ_spec; ++i)
-    {
-      const sunindextype var = NZ_spec[i];
-      const uint8_t dd       = spec[var];
-      for (uint8_t j = 0; j <= dd; ++j)
-      {
-        const sunindextype col     = st->st_acc_varofs[var] + j,
-                           col_end = SM_INDEXPTRS_S(A)[col + 1];
-
-        if (j != dd) { SM_DATA_S(A)[col_end - 1] = -cj; }
-        if (0 < j)
-        {
-          const sunindextype ofs      = j < dd ? 2 : 1;
-          SM_DATA_S(A)[col_end - ofs] = ONE;
-        }
-      }
-    }
-  }
-
-  return SUN_SUCCESS;
-}
-
-static const DDMatrix_Ops DDMatrix_Ops_Sparse = {
-  .evalddjac = DDMatEvalDDJac_Sparse};
+static const DDMatrix_Ops DDMatrix_Ops_Sparse = {0};
 
 DDMatrix* DDMatWrapSparse(const SUNMatrix A)
 {
@@ -361,31 +260,4 @@ DDMatrix* DDMatWrapSparse(const SUNMatrix A)
   B->ops = &DDMatrix_Ops_Sparse;
 
   return B;
-}
-
-SUNMatrix DDSparseSUNMatFromStructure(const Structure* st,
-                                      sunindextype NNZ,
-                                      int sparsetype,
-                                      SUNContext sunctx)
-{
-  SUNFunctionBegin(sunctx);
-
-  SUNCheckNull(st, SUN_ERR_ARG_CORRUPT);
-  SUNCheckNull(NNZ >= 0, SUN_ERR_ARG_OUTOFRANGE);
-
-  SUNCheckNull(st->st_N >= st->st_M, SUN_ERR_ARG_DIMSMISMATCH);
-  SUNCheckNull(sparsetype == CSC_MAT || sparsetype == CSR_MAT,
-               SUN_ERR_ARG_OUTOFRANGE);
-
-  const sunindextype N = st->st_N;
-
-  if (sparsetype == CSC_MAT)
-  {
-    sunindextype tmp = 0;
-    for (sunindextype i = 0; i < st->st_DAE_N; ++i) { tmp += st->st_varofs[i]; }
-    NNZ += 2 * tmp;
-  }
-  else { NNZ = NNZ + 2 * (N - st->st_M); }
-
-  return SUNSparseMatrix(N, N, NNZ, sparsetype, sunctx);
 }
