@@ -15,10 +15,10 @@ int main(void)
   for (sunindextype i = 0; i < SM_LDATA_D(A); ++i) { SM_DATA_D(A)[i] = i + 1; }
   sunindextype rows[] = {1, 2, 3};
   sunindextype cols[] = {1, 2};
-  DDMatrix* B         = DDMatWrapDense(A);
+  DDMatrix B          = DDMatWrapDense(A);
   TEST_ASSERT(B != NULL);
 
-  DDMatrix* C = DDMatCloneSub(B, 3, rows, 2, cols);
+  DDMatrix C = DDMatCloneSub(B, 3, rows, 2, cols);
   TEST_ASSERT(C != NULL);
 
   SUNMatrix D = DDMatGetSUNMat(C);

@@ -1,4 +1,3 @@
-#include <float.h>
 #include <idas/idas.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -124,12 +123,12 @@ struct DDMemRec
 
   /* DAE Structure and Pivoting */
 
-  Structure* dd_st;
-  PivMem* dd_pm;
+  Struc dd_st;
+  PivMem dd_pm;
   sunrealtype dd_pivot_tol;
   uint8_t* dd_prev_spec;
   DDJacFn0* dd_jacf0;
-  DDMatrix* dd_J0;
+  DDMatrix dd_J0;
   SUNMatrix dd_J;
 
   /* IDA Memory */
@@ -156,7 +155,7 @@ struct DDMemRec
   /* Backwards Problem */
 
   sunrealtype dd_tinitial;
-  DynArr_ProbB* dd_probBs;
+  DynArr_ProbB dd_probBs;
   DDckpntMem ck_mem;
   DDckpntMem ck_mem_cur;
 };
@@ -221,9 +220,9 @@ static int DDResBWrapper(sunrealtype,
                          N_Vector,
                          void*);
 
-static void DDSetYpFromY(const PivMem[static 1], const N_Vector, N_Vector);
+static void DDSetYpFromY(PivMem, N_Vector, N_Vector);
 
-static void DDSetId(const Structure[static 1], const PivMem[static 1], N_Vector);
+static void DDSetId(Struc, PivMem, N_Vector);
 
 static void DDAdjCleanup(DDMem dd_mem);
 
@@ -419,10 +418,10 @@ void DDFree(DDMem* dd_mem_ptr)
  * -------------------------------------------------------------------------- */
 
 int DDInit(DDMem dd_mem,
-           Structure st[static 1],
+           Struc st,
            sunrealtype ptol,
            DDJacFn0 jacf0,
-           DDMatrix J0[static 1],
+           DDMatrix J0,
            DDResFn res,
            sunrealtype t0,
            N_Vector Y0)
@@ -453,7 +452,7 @@ int DDInit(DDMem dd_mem,
   dd_mem->dd_pivot_tol = ptol;
   dd_mem->dd_t0        = t0;
 
-  PivMem* pm = PMCreate(sunctx, st, J0);
+  PivMem pm = PMCreate(sunctx, st, J0);
   if (pm == NULL)
   {
     DDHandleErr(SUN_ERR_MEM_FAIL);
@@ -461,7 +460,7 @@ int DDInit(DDMem dd_mem,
   }
   dd_mem->dd_pm = pm;
 
-  uint8_t* prev_spec = malloc(st->st_DAE_N * sizeof(*dd_mem->dd_prev_spec));
+  uint8_t* prev_spec = malloc(st->DAE_size * sizeof(*dd_mem->dd_prev_spec));
   if (prev_spec == NULL)
   {
     DDHandleErr(SUN_ERR_MEM_FAIL);
@@ -479,7 +478,7 @@ int DDInit(DDMem dd_mem,
     return SUN_ERR_OP_FAIL;
   }
 
-  memcpy(prev_spec, pm->pm_spec, st->st_DAE_N * sizeof(*prev_spec));
+  memcpy(prev_spec, pm->spec, st->DAE_size * sizeof(*prev_spec));
 
   dd_mem->dd_yy = N_VClone(Y0);
   dd_mem->dd_yp = N_VClone(Y0);
@@ -521,11 +520,11 @@ static int DDResWrapper(sunrealtype t,
                         void* user_data)
 {
   const DDMem dd_mem = (DDMem)user_data;
-  const PivMem* pm   = dd_mem->dd_pm;
+  const PivMem pm    = dd_mem->dd_pm;
 
   /* Evaluate differential equations residual. */
 
-  const sunindextype N_diff = pm->pm_N_diff;
+  const sunindextype N_diff = pm->N_diff_vars;
   const sunindextype rr_ofs = N_VGetLength(rr) - N_diff;
 
   const sunrealtype *yy_arr = N_VGetArrayPointer(yy),
@@ -534,7 +533,7 @@ static int DDResWrapper(sunrealtype t,
   sunrealtype* rr_arr = N_VGetArrayPointer(rr);
   for (sunindextype i = 0; i < N_diff; ++i)
   {
-    const sunindextype var = pm->pm_dvars[i];
+    const sunindextype var = pm->diff_vars[i];
 
     rr_arr[rr_ofs + i] = yy_arr[var + 1] - yp_arr[var];
   }
@@ -546,31 +545,29 @@ static int DDResWrapper(sunrealtype t,
   return flag;
 }
 
-static void DDSetYpFromY(const PivMem pm[static 1], const N_Vector yy, N_Vector yp)
+static void DDSetYpFromY(PivMem pm, N_Vector yy, N_Vector yp)
 {
   N_VConst(ZERO, yp);
   const sunrealtype* yy_arr = N_VGetArrayPointer(yy);
   sunrealtype* yp_arr       = N_VGetArrayPointer(yp);
 
-  for (sunindextype i = 0; i < pm->pm_N_diff; ++i)
+  for (sunindextype i = 0; i < pm->N_diff_vars; ++i)
   {
-    const sunindextype var = pm->pm_dvars[i];
+    const sunindextype var = pm->diff_vars[i];
 
     yp_arr[var + 1] = yy_arr[var];
   }
 }
 
-static void DDSetId(const Structure st[static 1],
-                    const PivMem pm[static 1],
-                    N_Vector id)
+static void DDSetId(Struc st, PivMem pm, N_Vector id)
 {
   N_VConst(ZERO, id);
   sunrealtype* id_arr = N_VGetArrayPointer(id);
-  for (sunindextype i = 0; i < pm->pm_NNZ_spec; ++i)
+  for (sunindextype i = 0; i < pm->NNZ_spec; ++i)
   {
-    const sunindextype var = pm->pm_NZ_spec[i];
-    const sunindextype ofs = st->st_acc_varofs[var];
-    for (uint8_t j = 0; j < pm->pm_spec[var]; ++j) { id_arr[ofs + j] = ONE; }
+    const sunindextype var = pm->NZ_spec[i];
+    const sunindextype ofs = st->var_to_idx[var];
+    for (uint8_t j = 0; j < pm->spec[var]; ++j) { id_arr[ofs + j] = ONE; }
   }
 }
 
@@ -647,15 +644,15 @@ PivotResult DDPivot(DDMem dd_mem)
 
   SUNFunctionBegin(dd_mem->sunctx);
 
-  const Structure* st = dd_mem->dd_st;
-  PivMem* pm          = dd_mem->dd_pm;
+  Struc st  = dd_mem->dd_st;
+  PivMem pm = dd_mem->dd_pm;
 
-  memcpy(dd_mem->dd_prev_spec, pm->pm_spec, st->st_DAE_N * sizeof(*pm->pm_spec));
+  memcpy(dd_mem->dd_prev_spec, pm->spec, st->DAE_size * sizeof(*pm->spec));
 
   IDAMem ida_mem = dd_mem->ida_mem;
 
   N_Vector yy = dd_mem->dd_yy, yp = dd_mem->dd_yp;
-  DDMatrix* J0 = dd_mem->dd_J0;
+  DDMatrix J0 = dd_mem->dd_J0;
 
   const sunrealtype tn = ida_mem->ida_tn;
 
@@ -684,9 +681,9 @@ PivotResult DDPivot(DDMem dd_mem)
   }
 
   sunbooleantype changed = SUNFALSE;
-  for (sunindextype i = 0; i < st->st_DAE_N; ++i)
+  for (sunindextype i = 0; i < st->DAE_size; ++i)
   {
-    if (dd_mem->dd_prev_spec[i] != pm->pm_spec[i])
+    if (dd_mem->dd_prev_spec[i] != pm->spec[i])
     {
       changed = SUNTRUE;
       break;
@@ -743,7 +740,7 @@ PivotResult DDPivot(DDMem dd_mem)
       ck_next->ck_t1      = tn;
       ck_next->ida_ck_mem = ida_adj_mem->ck_mem;
 
-      DDckpntMem ck_mem = DDckpntCreate(tn, pm->pm_DAE_N, pm->pm_spec);
+      DDckpntMem ck_mem = DDckpntCreate(tn, pm->DAE_size, pm->spec);
       if (ck_mem == NULL)
       {
         DDHandleErr(SUN_ERR_MEM_FAIL);
@@ -890,11 +887,11 @@ static int DDResSWrapper(int Ns,
 
   DDAssertWithCtx(dd_mem != NULL, SUN_ERR_ARG_CORRUPT, NULL);
 
-  const PivMem* pm = dd_mem->dd_pm;
+  const PivMem pm = dd_mem->dd_pm;
 
   /* Compute sensitivites of differential residuals. */
 
-  const sunindextype N_diff = pm->pm_N_diff;
+  const sunindextype N_diff = pm->N_diff_vars;
   const sunindextype rr_ofs = N_VGetLength(rrS[0]) - N_diff;
   for (int i = 0; i < Ns; ++i)
   {
@@ -904,7 +901,7 @@ static int DDResSWrapper(int Ns,
     sunrealtype* rrS_arr = N_VGetArrayPointer(rrS[i]);
     for (sunindextype j = 0; j < N_diff; ++j)
     {
-      const sunindextype var = pm->pm_dvars[j];
+      const sunindextype var = pm->diff_vars[j];
 
       rrS_arr[rr_ofs + j] = yyS_arr[var + 1] - ypS_arr[var];
     }
@@ -1055,9 +1052,9 @@ int DDAdjInit(DDMem dd_mem, long Nd, int interpType)
     return SUN_ERR_MEM_FAIL;
   }
 
-  PivMem* pm = dd_mem->dd_pm;
+  PivMem pm = dd_mem->dd_pm;
 
-  dd_mem->ck_mem = DDckpntCreate(dd_mem->dd_t0, pm->pm_DAE_N, pm->pm_spec);
+  dd_mem->ck_mem = DDckpntCreate(dd_mem->dd_t0, pm->DAE_size, pm->spec);
   if (dd_mem->ck_mem == NULL)
   {
     DDHandleErr(SUN_ERR_MEM_FAIL);
@@ -1525,17 +1522,17 @@ static int DDLsJacFnWrapper1_Dense(sunrealtype t,
                                    N_Vector tmp3)
 {
   const DDMem dd_mem = (DDMem)user_data;
-  const PivMem* pm   = dd_mem->dd_pm;
+  const PivMem pm    = dd_mem->dd_pm;
 
   /* Compute lower part of the Jacobian containing rows for the differential
      equations. */
 
-  const sunindextype N_diff  = pm->pm_N_diff;
+  const sunindextype N_diff  = pm->N_diff_vars;
   const sunindextype row_ofs = SM_ROWS_D(J) - N_diff;
 
   for (sunindextype i = 0; i < N_diff; ++i)
   {
-    const sunindextype var = pm->pm_dvars[i];
+    const sunindextype var = pm->diff_vars[i];
 
     SM_ELEMENT_D(J, row_ofs + i, var)     = -cj;
     SM_ELEMENT_D(J, row_ofs + i, var + 1) = ONE;
@@ -1561,17 +1558,17 @@ static int DDLsJacFnWrapper1_CSR(sunrealtype t,
                                  N_Vector tmp3)
 {
   const DDMem dd_mem = (DDMem)user_data;
-  const PivMem* pm   = dd_mem->dd_pm;
+  const PivMem pm    = dd_mem->dd_pm;
 
   /* Compute lower part of the Jacobian containing rows for the differential
      equations. */
 
-  const sunindextype N_diff = pm->pm_N_diff;
+  const sunindextype N_diff = pm->N_diff_vars;
 
   sunindextype row = SM_ROWS_S(J) - N_diff, nnz = SM_NNZ_S(J) - 2 * N_diff;
   for (sunindextype i = 0; i < N_diff; ++i)
   {
-    const sunindextype var = pm->pm_dvars[i];
+    const sunindextype var = pm->diff_vars[i];
 
     SM_INDEXVALS_S(J)[nnz] = var;
     SM_DATA_S(J)[nnz]      = -cj;
@@ -1908,7 +1905,7 @@ int DDSetUserDataB(DDMem dd_mem, int which, void* user_dataB)
 
   SUNFunctionBegin(dd_mem->sunctx);
 
-  DynArr_ProbB* pbs = dd_mem->dd_probBs;
+  DynArr_ProbB pbs = dd_mem->dd_probBs;
 
   int flag = SUN_ERR_ARG_OUTOFRANGE;
   for (size_t i = 0; i < DA_LENGTH(pbs); ++i)

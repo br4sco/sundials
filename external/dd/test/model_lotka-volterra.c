@@ -40,21 +40,21 @@ int main(int argc, char* argv[])
   /* Compute DAE structure. */
   char* eqn_names[] = {"f₁", "f₂"};
   char* var_names[] = {"x", "y"};
-  Structure* st = STCreate(LOTKA_VOLTERRA_N, LOTKA_VOLTERRA_C, LOTKA_VOLTERRA_D,
-                           eqn_names, var_names);
+  Struc st = STCreate(LOTKA_VOLTERRA_N, LOTKA_VOLTERRA_C, LOTKA_VOLTERRA_D,
+                      eqn_names, var_names);
   TEST_ASSERT(st);
 
-  const sunindextype N = st->st_N;
+  const sunindextype N = st->N;
 
   /* Setup Sundials context. */
   SUNContext sunctx;
   TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &sunctx) == SUN_SUCCESS);
 
   /* Allocate state and Jacobian data. */
-  SUNMatrix J0 = SUNDenseMatrix(st->st_DAE_N, st->st_DAE_N, sunctx);
+  SUNMatrix J0 = SUNDenseMatrix(st->DAE_size, st->DAE_size, sunctx);
   TEST_ASSERT(J0);
 
-  DDMatrix* dd_J0 = DDMatWrapDense(J0);
+  DDMatrix dd_J0 = DDMatWrapDense(J0);
   TEST_ASSERT(dd_J0);
   N_Vector Y = N_VNew_Serial(N, sunctx);
   TEST_ASSERT(Y);
@@ -130,9 +130,10 @@ int main(int argc, char* argv[])
   {
   case NONE: break;
   case DENSE:
-    TEST_ASSERT(DDSetJacFn(dd_mem, (DDLsJacFn){.id = DD_JAC_1,
-                                               .fn.jacfn1 = LotkaVolterraJacfn_Dense}) ==
-                IDA_SUCCESS);
+    TEST_ASSERT(
+      DDSetJacFn(dd_mem, (DDLsJacFn){.id        = DD_JAC_1,
+                                     .fn.jacfn1 = LotkaVolterraJacfn_Dense}) ==
+      IDA_SUCCESS);
     break;
   case CSR:
     TEST_ASSERT(

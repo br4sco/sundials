@@ -49,20 +49,20 @@ int main(int argc, char* argv[])
   const sunrealtype tout  = SUN_RCONST(100.0);
 
   /* Compute DAE structure. */
-  Structure* st = STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D,
-                           PENDULUM_EQN_NAMES, PENDULUM_VAR_NAMES);
+  Struc st = STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, PENDULUM_EQN_NAMES,
+                      PENDULUM_VAR_NAMES);
   TEST_ASSERT(st);
 
-  const sunindextype N = st->st_N;
+  const sunindextype N = st->N;
 
   /* Setup Sundials context. */
   SUNContext sunctx;
   TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &sunctx) == SUN_SUCCESS);
 
   /* Allocate state and Jacobian data. */
-  SUNMatrix J0 = SUNDenseMatrix(st->st_DAE_N, st->st_DAE_N, sunctx);
+  SUNMatrix J0 = SUNDenseMatrix(st->DAE_size, st->DAE_size, sunctx);
   TEST_ASSERT(J0);
-  DDMatrix* dd_J0 = DDMatWrapDense(J0);
+  DDMatrix dd_J0 = DDMatWrapDense(J0);
   TEST_ASSERT(dd_J0);
   N_Vector Y = N_VNew_Serial(N, sunctx);
   TEST_ASSERT(Y);

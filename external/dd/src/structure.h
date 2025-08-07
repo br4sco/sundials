@@ -22,62 +22,65 @@ typedef struct
   uint8_t* data;            /** Non-zero values. */
 } SigmaMatrix;
 
-/** @brief Encodes high-index DAE structure. */
 typedef struct
 {
-  sunindextype st_DAE_N;       /** DAE size */
-  sunindextype st_DAE_N1;      /** Number of variables in first order DAE */
-  sunindextype st_M;           /** Number of equation symbols */
-  sunindextype st_N;           /** Number of variable symbols */
-  uint8_t* st_eqnofs;          /** Equation offset vector of size `N` */
-  uint8_t* st_varofs;          /** Variable offset vector of size `N` */
-  sunindextype* st_acc_eqnofs; /** Accumulated equation offsets */
-  sunindextype* st_acc_varofs; /** Accumulated variable offsets */
-  uint8_t st_K;                /** Number of stages */
-  sunindextype* st_Mk;         /** Number of equations at the k'th stage */
-  sunindextype* st_Nk;         /** Number of variables at the k'th stage */
-  sunindextype** st_eqns;      /** Equations at the k'th stage */
-  sunindextype** st_vars;      /** Variables at the k'th stage */
-  sunindextype* st_eqnsdata;   /** Equations in all stages (length `st_M`) */
-  sunindextype* st_varsdata;   /** Variables in all stages (length `st_N`) */
-  char** st_eqnnames;          /** Equation names (length `st_M`) */
-  char** st_varnames;          /** Variable names (length `st_N`) */
-} Structure;
+  sunindextype DAE_size;      /** DAE size */
+  sunindextype DAE_1ord_size; /** Number of variables in first order DAE */
+  sunindextype M;             /** Number of equation symbols */
+  sunindextype N;             /** Number of variable symbols */
+  uint8_t* eqnofs;            /** Equation offset vector of size `N` */
+  uint8_t* varofs;            /** Variable offset vector of size `N` */
+  sunindextype* eqn_to_idx;   /** Maps equation to linear index */
+  sunindextype* var_to_idx;   /** Maps variable to linear index */
+  uint8_t K;                  /** Number of stages */
+  sunindextype* M_k;          /** Number of equations at the k'th stage */
+  sunindextype* N_k;          /** Number of variables at the k'th stage */
+  sunindextype** eqns_k;      /** Equations at the k'th stage */
+  sunindextype** vars_k;      /** Variables at the k'th stage */
+  sunindextype* eqns;         /** Equations in all stages */
+  sunindextype* vars;         /** Variables in all stages */
+  char** eqn_names;           /** Equation names */
+  char** var_names;           /** Variable names */
+} _Struc;
+
+/** @brief Encodes high-index DAE structure. */
+typedef _Struc* Struc;
 
 /* ==========================================================================
  * Macros
  * ========================================================================== */
 
 /** @brief Converts stage index to stage offset. */
-#define ST_STAGE_FROM_INDEX(st, k) ((int)k - (int)st->st_K + 1)
+#define ST_STAGE_FROM_INDEX(st, k) ((int)k - (int)st->K + 1)
 
 /** @brief Derivative order of equation at specified stage index */
-#define ST_EQN_ORDER(st, k, i) \
-  (ST_STAGE_FROM_INDEX(st, k) + (int)st->st_eqnofs[i])
+#define ST_EQN_ORDER(st, k, i) (ST_STAGE_FROM_INDEX(st, k) + (int)st->eqnofs[i])
 
 /** @brief Derivative order of variable at specified stage index */
-#define ST_VAR_ORDER(st, k, j) \
-  (ST_STAGE_FROM_INDEX(st, k) + (int)st->st_varofs[j])
+#define ST_VAR_ORDER(st, k, j) (ST_STAGE_FROM_INDEX(st, k) + (int)st->varofs[j])
 
 /** @brief Return the name given to an equation or an empty string if no names
  * was given. */
 #define ST_EQN_NAME(st, i) \
-  (st->st_eqnnames && st->st_eqnnames[i] ? st->st_eqnnames[i] : "")
+  (st->eqn_names && st->eqn_names[i] ? st->eqn_names[i] : "")
 
 /** @brief Return the name given to a variale or an empty string if no names
  * was given. */
 #define ST_VAR_NAME(st, j) \
-  (st->st_varnames && st->st_varnames[j] ? st->st_varnames[j] : "")
+  (st->varn_ames && st->var_names[j] ? st->var_names[j] : "")
 
 /* ==========================================================================
  * Interface
  * ========================================================================== */
 
 /** @brief Creates DAE structure. */
-Structure* STCreate(sunindextype size, const uint8_t[static size],
-                    const uint8_t[static size], char**, char**);
+Struc STCreate(sunindextype size,
+               const uint8_t[static size],
+               const uint8_t[static size],
+               char**,
+               char**);
 
 /** @brief Destroys DAE structure. */
-void STDestroy(Structure*);
+void STDestroy(Struc);
 
 #endif

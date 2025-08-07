@@ -13,9 +13,9 @@ int main(void)
 
   SUNMatrix A = SUNDenseMatrix(2, 3, ctx);
   TEST_ASSERT(A != NULL);
-  DDMatrix* B = DDMatWrapDense(A);
+  DDMatrix B = DDMatWrapDense(A);
   TEST_ASSERT(B != NULL);
-  DDMatrixWorkspace* ws = DDMatCreateWS(B);
+  DDMatrixWorkspace ws = DDMatCreateWS(B);
   TEST_ASSERT(ws != NULL);
   SM_ELEMENT_D(A, 0, 0)    = 1;
   SM_ELEMENT_D(A, 0, 1)    = 1;

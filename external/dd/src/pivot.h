@@ -17,32 +17,34 @@
  * Pivot Memory
  * -------------------------------------------------------------------------- */
 
-/** @brief Holds pivoting state */
 typedef struct
 {
-  SUNContext sunctx;          /** Sundials context  */
-  sunindextype pm_DAE_N;      /** DAE size */
-  uint8_t pm_K;               /** Number of stages */
-  uint8_t* pm_spec;           /** Dummy derivative specification */
-  sunindextype pm_NNZ_spec;   /** Number of non-zero entries in `spec` */
-  sunindextype* pm_NZ_spec;   /** Non-zero entries in `spec` */
-  sunindextype pm_N_diff;     /** Number of diff equations in first-order DAE */
-  sunindextype* pm_dvars;     /** Diff variables in first-order DAE */
-  sunbooleantype** pm_known;  /** Indicates known variables at each stage */
-  sunindextype** pm_vars;     /** Pivoted variables in each stage */
-  DDMatrix** pm_Jk;           /** Jacobian subset for each stage */
-  DDMatrixWorkspace** pm_wss; /** Workspace for each stage */
-  sunindextype* pm_varsdata;  /** Varables in all stages  */
-  sunbooleantype* pm_knowndata; /** Known variables in all stages */
-} PivMem;
+  SUNContext sunctx;        /** Sundials context  */
+  sunindextype DAE_size;    /** DAE size */
+  uint8_t K;                /** Number of stages */
+  uint8_t* spec;            /** Dummy derivative specification */
+  sunindextype NNZ_spec;    /** Number of non-zero entries in `spec` */
+  sunindextype* NZ_spec;    /** Non-zero entries in `spec` */
+  sunindextype N_diff_vars; /** Number of diff equations in first-order DAE */
+  sunindextype* diff_vars;  /** Diff variables in first-order DAE */
+  sunbooleantype** known_k; /** Indicates known variables at each stage */
+  sunindextype** vars_k;    /** Pivoted variables in each stage */
+  DDMatrix* J_k;            /** Jacobian subset for each stage */
+  DDMatrixWorkspace* wss;   /** Workspace for each stage */
+  sunindextype* vars;       /** Varables in all stages  */
+  sunbooleantype* known;    /** Known variables in all stages */
+} _PivMem;
+
+/** @brief Holds pivoting state */
+typedef _PivMem* PivMem;
 
 /** @brief Creates pivot data based on DAE structure. */
-PivMem* PMCreate(SUNContext, const Structure[static 1], const DDMatrix[static 1]);
+PivMem PMCreate(SUNContext, Struc, DDMatrix);
 
 /** @brief Destroys pivot data. */
-void PMDestroy(PivMem*);
+void PMDestroy(PivMem);
 
-/* /\** @brief Prints submatrix at the the given stage *\/ */
+/* /\** @brief Prints sub-matrix at the the given stage *\/ */
 /* void PSPrintSubmat(const Structure[static 1], const PivMem[static 1], uint8_t, */
 /*                    FILE*); */
 
@@ -51,14 +53,12 @@ void PMDestroy(PivMem*);
  * -------------------------------------------------------------------------- */
 
 /** @brief Pivots a DAE given its structure and Jacobian. */
-SUNErrCode PPivot(const Structure[static 1], const DDMatrix[static 1],
-                  sunrealtype, const PivMem[static 1]);
+SUNErrCode PPivot(Struc, DDMatrix, sunrealtype, PivMem);
 
 /** @brief Computes a DD spec from a pivoted DAE. */
-SUNErrCode PPComputeDDSpec(const Structure[static 1], PivMem[static 1]);
+SUNErrCode PPComputeDDSpec(Struc, PivMem);
 
 /** @brief Update the DD spec. **/
-SUNErrCode PPUpdateDDSpec(const Structure[static 1], const uint8_t[static 1],
-                          PivMem[static 1]);
+SUNErrCode PPUpdateDDSpec(Struc, const uint8_t[static 1], PivMem);
 
 #endif

@@ -13,7 +13,7 @@
  * Generic DD Matrix
  * ========================================================================== */
 
-void DDMatDestroy(DDMatrix* self)
+void DDMatDestroy(DDMatrix self)
 {
   if (self == NULL) { return; }
 
@@ -22,7 +22,7 @@ void DDMatDestroy(DDMatrix* self)
   free(self);
 }
 
-void DDMatWSDestroy(DDMatrixWorkspace* self)
+void DDMatWSDestroy(DDMatrixWorkspace self)
 {
   if (self == NULL) { return; }
 
@@ -45,19 +45,19 @@ void DDMatWSDestroy(DDMatrixWorkspace* self)
  * Dense DD Matrix
  * ========================================================================== */
 
-static void DDMatWSContentDestroy_Dense(SUNDIALS_MAYBE_UNUSED DDMatrixWorkspace* ws)
+static void DDMatWSContentDestroy_Dense(SUNDIALS_MAYBE_UNUSED DDMatrixWorkspace ws)
 {
   return;
 }
 
-static DDMatrixWorkspace* DDMatCreateWS_Dense(const DDMatrix self[static 1])
+static DDMatrixWorkspace DDMatCreateWS_Dense(DDMatrix self)
 {
   SUNMatrix A = DDMatGetSUNMat(self);
   SUNFunctionBegin(A->sunctx);
 
   SUNAssertNull(SUNMatGetID(A) == SUNMATRIX_DENSE, SUN_ERR_ARG_WRONGTYPE);
 
-  DDMatrixWorkspace* ws = malloc(sizeof(*ws));
+  DDMatrixWorkspace ws = malloc(sizeof(*ws));
   SUNAssertNull(ws, SUN_ERR_MALLOC_FAIL);
 
   ws->id      = DDMATRIXWS_ROWPIVOT;
@@ -69,8 +69,8 @@ static DDMatrixWorkspace* DDMatCreateWS_Dense(const DDMatrix self[static 1])
   return ws;
 }
 
-SUNErrCode DDMatPivot_Dense(const DDMatrix self[static 1],
-                            const DDMatrixWorkspace ws[static 1],
+SUNErrCode DDMatPivot_Dense(DDMatrix self,
+                            DDMatrixWorkspace ws,
                             sunrealtype tol,
                             sunindextype n,
                             sunindextype colpivots[static n])
@@ -155,11 +155,11 @@ SUNErrCode DDMatPivot_Dense(const DDMatrix self[static 1],
   return SUN_SUCCESS;
 }
 
-static DDMatrix* DDMatCloneSub_Dense(const DDMatrix self[static 1],
-                                     sunindextype m,
-                                     const sunindextype rows[static m],
-                                     sunindextype n,
-                                     const sunindextype cols[static n])
+static DDMatrix DDMatCloneSub_Dense(DDMatrix self,
+                                    sunindextype m,
+                                    const sunindextype rows[static m],
+                                    sunindextype n,
+                                    const sunindextype cols[static n])
 {
   SUNMatrix sm_self = DDMatGetSUNMat(self);
   SUNFunctionBegin(sm_self->sunctx);
@@ -187,8 +187,8 @@ static DDMatrix* DDMatCloneSub_Dense(const DDMatrix self[static 1],
   return DDMatWrapDense(A_new);
 }
 
-static SUNErrCode DDMatCopySub_Dense(const DDMatrix self[static 1],
-                                     const DDMatrix A[static 1],
+static SUNErrCode DDMatCopySub_Dense(DDMatrix self,
+                                     DDMatrix A,
                                      sunindextype m,
                                      const sunindextype rows[static m],
                                      sunindextype n,
@@ -226,13 +226,13 @@ static const DDMatrix_Ops DDMatrix_Ops_Dense = {
   .copysub         = DDMatCopySub_Dense,
 };
 
-DDMatrix* DDMatWrapDense(const SUNMatrix A)
+DDMatrix DDMatWrapDense(SUNMatrix A)
 {
   SUNFunctionBegin(A->sunctx);
 
   SUNAssertNull(SUNMatGetID(A) == SUNMATRIX_DENSE, SUN_ERR_ARG_WRONGTYPE);
 
-  DDMatrix* B = malloc(sizeof(*B));
+  DDMatrix B = malloc(sizeof(*B));
   SUNCheckNull(B, SUN_ERR_MALLOC_FAIL);
 
   B->A   = A;
@@ -247,13 +247,13 @@ DDMatrix* DDMatWrapDense(const SUNMatrix A)
 
 static const DDMatrix_Ops DDMatrix_Ops_Sparse = {0};
 
-DDMatrix* DDMatWrapSparse(const SUNMatrix A)
+DDMatrix DDMatWrapSparse(SUNMatrix A)
 {
   SUNFunctionBegin(A->sunctx);
 
   SUNAssertNull(SUNMatGetID(A) == SUNMATRIX_SPARSE, SUN_ERR_ARG_WRONGTYPE);
 
-  DDMatrix* B = malloc(sizeof(*B));
+  DDMatrix B = malloc(sizeof(*B));
   SUNCheckNull(B, SUN_ERR_MALLOC_FAIL);
 
   B->A   = A;

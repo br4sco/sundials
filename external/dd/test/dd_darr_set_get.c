@@ -12,7 +12,7 @@ int main(void)
 
   const size_t initial_capacity = 1;
 
-  DynArr_int* arr = DynArrCreate_int(initial_capacity);
+  DynArr_int arr = DynArrCreate_int(initial_capacity);
   TEST_ASSERT(DynArrGet_int(arr, 0).none);
   TEST_ASSERT(DynArrPushBack_int(arr, 0));
   TEST_ASSERT(DynArrPushBack_int(arr, 1));

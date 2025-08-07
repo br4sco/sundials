@@ -17,15 +17,17 @@
     size_t capacity;                                                      \
     size_t len;                                                           \
     T* data;                                                              \
-  } DynArr_##NAME;                                                        \
+  } _DynArr_##NAME;                                                       \
+                                                                          \
+  typedef _DynArr_##NAME* DynArr_##NAME;                                  \
                                                                           \
   DD_DEFINE_OPTION(NAME, T);                                              \
                                                                           \
-  DynArr_##NAME* DynArrCreate_##NAME(size_t initial_capacity)             \
+  DynArr_##NAME DynArrCreate_##NAME(size_t initial_capacity)              \
   {                                                                       \
     if (initial_capacity == 0) { return NULL; }                           \
                                                                           \
-    DynArr_##NAME* arr = malloc(sizeof(*arr));                            \
+    DynArr_##NAME arr = malloc(sizeof(*arr));                             \
     if (!arr) { return NULL; }                                            \
                                                                           \
     arr->data = malloc(initial_capacity * sizeof(T));                     \
@@ -40,19 +42,19 @@
     return arr;                                                           \
   }                                                                       \
                                                                           \
-  size_t DynArrLength_##NAME(const DynArr_##NAME* arr)                    \
+  size_t DynArrLength_##NAME(const DynArr_##NAME arr)                     \
   {                                                                       \
     return arr ? arr->len : 0;                                            \
   }                                                                       \
                                                                           \
-  Option_##NAME DynArrGet_##NAME(DynArr_##NAME* arr, size_t i)            \
+  Option_##NAME DynArrGet_##NAME(DynArr_##NAME arr, size_t i)             \
   {                                                                       \
     if (!arr || i >= arr->len) { return (Option_##NAME){.none = true}; }  \
                                                                           \
     return (Option_##NAME){.val = arr->data[i]};                          \
   }                                                                       \
                                                                           \
-  bool DynArrSet_##NAME(DynArr_##NAME* arr, size_t i, T val)              \
+  bool DynArrSet_##NAME(DynArr_##NAME arr, size_t i, T val)               \
   {                                                                       \
     if (!arr || i >= arr->len) { return false; }                          \
                                                                           \
@@ -60,7 +62,7 @@
     return true;                                                          \
   }                                                                       \
                                                                           \
-  void DynArrDestroy_##NAME(DynArr_##NAME* arr)                           \
+  void DynArrDestroy_##NAME(DynArr_##NAME arr)                            \
   {                                                                       \
     if (arr)                                                              \
     {                                                                     \
@@ -70,7 +72,7 @@
     free(arr);                                                            \
   }                                                                       \
                                                                           \
-  bool DynArrPushBack_##NAME(DynArr_##NAME* arr, T val)                   \
+  bool DynArrPushBack_##NAME(DynArr_##NAME arr, T val)                    \
   {                                                                       \
     if (!arr) { return false; }                                           \
                                                                           \
@@ -90,7 +92,7 @@
     return true;                                                          \
   }                                                                       \
                                                                           \
-  Option_##NAME DynArrPopBack_##NAME(DynArr_##NAME* arr)                  \
+  Option_##NAME DynArrPopBack_##NAME(DynArr_##NAME arr)                   \
   {                                                                       \
     if (!arr || arr->len == 0) { return (Option_##NAME){.none = true}; }  \
                                                                           \

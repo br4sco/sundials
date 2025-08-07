@@ -30,8 +30,8 @@ int main(void)
   const int Nd            = 200;
 
   /* Compute DAE structure. */
-  Structure* st = STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D,
-                           PENDULUM_EQN_NAMES, PENDULUM_VAR_NAMES);
+  Struc st = STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, PENDULUM_EQN_NAMES,
+                      PENDULUM_VAR_NAMES);
   TEST_ASSERT(st);
 
   /* Setup Sundials context. */
@@ -43,11 +43,11 @@ int main(void)
    * ------------------------------------------------------------------------ */
 
   /* Allocate state and Jacobian data. */
-  SUNMatrix J0 = SUNDenseMatrix(st->st_DAE_N, st->st_DAE_N, ctx);
+  SUNMatrix J0 = SUNDenseMatrix(st->DAE_size, st->DAE_size, ctx);
   TEST_ASSERT(J0);
-  DDMatrix* dd_J0 = DDMatWrapDense(J0);
+  DDMatrix dd_J0 = DDMatWrapDense(J0);
   TEST_ASSERT(dd_J0);
-  N_Vector Y = N_VNew_Serial(st->st_N, ctx);
+  N_Vector Y = N_VNew_Serial(st->N, ctx);
   TEST_ASSERT(Y);
 
   /* Set DAE parameters. */
@@ -80,7 +80,7 @@ int main(void)
               IDA_SUCCESS);
 
   /* Setup and set linear solver. */
-  SUNMatrix J = SUNDenseMatrix(st->st_N, st->st_N, ctx);
+  SUNMatrix J = SUNDenseMatrix(st->N, st->N, ctx);
   TEST_ASSERT(J);
   SUNLinearSolver LS = SUNLinSol_Dense(Y, J, ctx);
   TEST_ASSERT(LS);
@@ -125,7 +125,7 @@ int main(void)
    * ------------------------------------------------------------------------ */
 
   /* Allocate state and set initial values */
-  N_Vector yyB = N_VNew_Serial(st->st_DAE_N1, ctx);
+  N_Vector yyB = N_VNew_Serial(st->DAE_1ord_size, ctx);
   TEST_ASSERT(yyB);
 
   N_Vector ypB = N_VClone(yyB);
@@ -145,7 +145,7 @@ int main(void)
 
   TEST_ASSERT(DDSetUserDataB(dd_mem, indexB, data) == IDA_SUCCESS);
 
-  SUNMatrix AB = SUNDenseMatrix(st->st_DAE_N1, st->st_DAE_N1, ctx);
+  SUNMatrix AB = SUNDenseMatrix(st->DAE_1ord_size, st->DAE_1ord_size, ctx);
   TEST_ASSERT(AB);
   SUNLinearSolver LSB = SUNLinSol_Dense(yyB, AB, ctx);
   TEST_ASSERT(LSB);

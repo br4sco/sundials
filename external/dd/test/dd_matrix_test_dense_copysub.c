@@ -12,10 +12,10 @@ int main(void)
   SUNContext_Create(SUN_COMM_NULL, &ctx);
 
   SUNMatrix A = SUNDenseMatrix(4, 4, ctx);
-  DDMatrix* B = DDMatWrapDense(A);
+  DDMatrix B  = DDMatWrapDense(A);
   TEST_ASSERT(B != NULL);
   SUNMatrix C = SUNDenseMatrix(3, 2, ctx);
-  DDMatrix* D = DDMatWrapDense(C);
+  DDMatrix D  = DDMatWrapDense(C);
   TEST_ASSERT(D != NULL);
 
   for (sunindextype i = 0; i < SM_LDATA_D(A); ++i) { SM_DATA_D(A)[i] = i + 1; }

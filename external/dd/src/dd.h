@@ -18,55 +18,204 @@
  * -------------------------------------------------------------------------- */
 
 /* --------------------------------------------------------------------------
- * Types
+ * Callback Functions
  * -------------------------------------------------------------------------- */
 
-/** @brief Residual callback function. */
-typedef int DDResFn(sunrealtype, N_Vector, N_Vector, void*);
+/**
+ * @brief DAE residual callback function.
+ *
+ * Should compute F(t,Y) = 0, where t is the independent variable and Y are the
+ * dependent variables and their derivative.
+ *
+ * The residual function F includes the scalar residuals of, a possibly
+ * high-index DAE, and their derivatives w.r.t. t according to the
+ * structural analysis of the DAE. I.e., given a structural analysis
+ * c,d ∈ ℕ[n], dependent variables y ∈ ℝ[n], scalar residual expressions
+ * e ∈ ℝ[n] then:
+ * ```
+ *       Y = {𝓓(0)y[0], …, 𝓓(d[0])y[0], …, 𝓓(0)y[n-1], …, 𝓓(d[n-1])y[n-1]}
+ * F(t, Y) = {𝓓(0)e[0], …, 𝓓(c[0])e[0], …, 𝓓(0)e[n-1], …, 𝓓(c[n-1])e[n-1]},
+ * ```
+ * where 𝓓(k) = dᵏ/dtᵏ.
+ *
+ * @param[in] t is the independent variable.
+ * @param[in] Y are the dependent variables and their derivatives. For each
+ *              element `Y[i]`, its derivative w.r.t. `t` is found at `Y[i + 1]`.
+ *
+ * @param[out] R holds the residual values. For each residual `R[i]`, its
+ *               derivative w.r.t. `t` should be stored at `R[i + 1]`.
+ *
+ * @param[inout] user_data points to user-defined data.
+ *
+ * @return a value `0` on success, a positive values if a recoverable error
+ *         occurred and a negative value of a non-recoverable error occurred.
+ */
+typedef int DDResFn(sunrealtype t, N_Vector Y, N_Vector R, void* user_data);
 
-/** @brief Jacobian callback function for highest order derivatives (both
-    equations and variables). */
-typedef int DDJacFn0(sunrealtype, N_Vector, DDMatrix[static 1], void*);
+/**
+ * @brief Jacobian callback function for highest order derivatives (both
+ *   equations and variables).
+ *
+ * given a structural analysis c,d ∈ ℕ[n], * dependent variables y ∈ ℝ[n], scalar
+ * residual expressions e ∈ ℝ[n] then this function should compute the n×n
+ * Jacobian: dʰe[i]/dy[j]ᵏ, where h = c[i] and k = d[j].
+ *
+ * @param[in] t is the independent variable.
+ * @param[in] Y are the dependent variables and their derivatives. For each
+ *              element `Y[i]`, its derivative w.r.t. `t` is found at `Y[i + 1]`.
+ *
+ * @param[out] J holds the values of the n×n Jacobian. Only non-zero values
+ *               needs to written to `J`.
+ *
+ * @param[inout] user_data points to user-defined data.
+ *
+ * @return a value `0` on success, a positive values if a recoverable error
+ *         occurred and a negative value of a non-recoverable error occurred.
+ */
+typedef int DDJacFn0(sunrealtype t, N_Vector Y, DDMatrix J, void* user_data);
 
-/** @brief Jacobian callback function, version 1, for `DDResFn`. */
-typedef int DDLsJacFn1(sunrealtype,
-                       N_Vector,
-                       N_Vector,
-                       SUNMatrix,
-                       void*,
-                       N_Vector,
-                       N_Vector,
-                       N_Vector);
+/**
+ * @brief Jacobian callback function, type 1, for `DDResFn`. Supports matrix
+ * type `SUNMATRIX_DENSE` and `SUNMATRIX_SPARSE` of kind `CSR_MAT`.
+ *
+ * Should compute the m×n Jacobian for the residual F(t,Y) ∈ ℝ[m] w.r.t.
+ * Y ∈ ℝ[n].
+ *
+ * @param[in] t is the independent variable.
+ * @param[in] Y are the dependent variables and their derivatives. For each
+ *              element `Y[i]`, its derivative w.r.t. `t` is found at `Y[i + 1]`.
+ *
+ * @param[in] R holds the residual values. For each residual `R[i]`, its
+ *              derivative w.r.t. `t` should be stored at `R[i + 1]`.
+ *
+ * @param[inout] J holds the values of the n×n Jacobian. Only non-zero values
+ *                 needs to be written to `J` and only rows 0 to m-1 should be
+ *                 updated. Rows m to n-1 holds values computed by the solver.
+ *
+ * @param[inout] user_data points to user-defined data.
+ * @param[inout] tmp1 user controlled workspace data.
+ * @param[inout] tmp2 user controlled workspace data.
+ * @param[inout] tmp3 user controlled workspace data.
+ *
+ * @return a value `0` on success, a positive values if a recoverable error
+ *         occurred and a negative value of a non-recoverable error occurred.
+ */
+typedef int DDLsJacFn1(sunrealtype t,
+                       N_Vector Y,
+                       N_Vector R,
+                       SUNMatrix J,
+                       void* user_data,
+                       N_Vector tmp1,
+                       N_Vector tmp2,
+                       N_Vector tmp3);
 
-/** @brief Jacobian callback function, version 2, for `DDResFn`. */
-typedef int DDLsJacFn2(sunrealtype,
-                       sunrealtype,
-                       N_Vector,
-                       N_Vector,
-                       SUNMatrix,
-                       N_Vector,
-                       void*,
-                       N_Vector,
-                       N_Vector,
-                       N_Vector);
+/**
+ * @brief Jacobian callback function, type 2, for `DDResFn`.
+ *
+ * Should compute the n×n Jacobian dH/dY + cj⋅dH/dYp for the residual
+ * H(t,Y,Yp) ∈ ℝ[n], where:
+ *
+ * ```
+ * H(t,Y,Yp) = | F(t,Y)  |
+ *             | G(Y,Yp) |,
+ * ```
+ * F(t,Y) ∈ ℝ[m] is implemented by `DDResFn`, G(Y,Yp) ∈ ℝ[n-m], Y,Yp ∈ ℝ[n], and
+ * cj ∈ ℝ. The vector Yp holds the derivatives of Y in a first-order view of the
+ * DAE.
+ *
+ * Given id ∈ {0,1}[n], which indicates that variable j is a differential
+ * variable in the first-order DAE if id[j] = 1, the residual G computes
+ * ```
+ * Y[j]  - Yp[j+1],
+ * ```
+ * for j = 1...n, assuming Y[j] and Yp[j+1] denotes the same dependent variable
+ * at the same differentiation order. Hence, assuming j is the first such
+ * variable, then J[m,j] = 1 and J[m,j+1] = -cj.
+ *
+ * @param[in] t is the independent variable.
+ * @param[in] cj is proportional to the inverse of the step-size.
+ * @param[in] Y are the dependent variables and their derivatives. For each
+ *              element `Y[i]`, its derivative w.r.t. `t` is found at `Y[i + 1]`.
+ *
+ * @param[in] R holds the residual values. For each residual `R[i]`, its
+ *              derivative w.r.t. `t` should be stored at `R[i + 1]`.
+ *
+ * @param[out] J holds the values of the n×n Jacobian. Only non-zero values
+ *               needs to be written to `J`.
+ *
+ * @param[in] id indicates if `Y[j]` is a differentiated variable in the
+ *               first-order view of the DAE. If Y[j] = 1 then Y[j] is a
+ *               differentiated variable and if Y[j] = 0 then Y[j] is a purely
+ *               algebraic variable.
+ *
+ * @param[inout] user_data points to user-defined data.
+ * @param[inout] tmp1 user controlled workspace data.
+ * @param[inout] tmp2 user controlled workspace data.
+ * @param[inout] tmp3 user controlled workspace data.
+ *
+ * @return a value `0` on success, a positive values if a recoverable error
+ *         occurred and a negative value of a non-recoverable error occurred.
+ */
+typedef int DDLsJacFn2(sunrealtype t,
+                       sunrealtype cj,
+                       N_Vector Y,
+                       N_Vector R,
+                       SUNMatrix J,
+                       N_Vector id,
+                       void* user_data,
+                       N_Vector tmp1,
+                       N_Vector tmp2,
+                       N_Vector tmp3);
 
-/** @brief Callback function for computing the a sparse Jacobian on CSC format
-    column-wise. */
-typedef int DDLsJacColFn_CSC(sunindextype,
-                             sunrealtype,
-                             N_Vector,
-                             N_Vector,
-                             SUNMatrix,
-                             sunindextype*,
-                             void*,
-                             N_Vector,
-                             N_Vector,
-                             N_Vector);
+/**
+ * @brief Callback function for column-wise computing the a sparse Jacobian for
+ * `DDResFn` on CSC format.
+ *
+ * Should compute the j'th column of the m×n Jacobian for the residual
+ * F(t,Y) ∈ ℝ[m] w.r.t. Y ∈ ℝ[n].
+ *
+ * @param[in] j is the column to compute. This function is called with
+ *              `j = 0..n-1` with increasing `j`.
+ *
+ * @param[in] t is the independent variable.
+ * @param[in] Y are the dependent variables and their derivatives. For each
+ *              element `Y[i]`, its derivative w.r.t. `t` is found at `Y[i + 1]`.
+ *
+ * @param[in] R holds the residual values. For each residual `R[i]`, its
+ *              derivative w.r.t. `t` should be stored at `R[i + 1]`.
+ *
+ * @param[out] J holds the values of the n×n Jacobian. Only non-zero values
+ *               needs to be written to `J` and only the first m elements in the
+ *               j'th column should be updated.
+ *
+ * @param[inout] nnz holds the number of non-zero elements in `J` from previous
+ *                   calls to this function and should hold the number of
+ *                   non-zero elements of `J` after the call returns.
+ *
+ * @param[inout] user_data points to user-defined data.
+ * @param[inout] tmp1 user controlled workspace data.
+ * @param[inout] tmp2 user controlled workspace data.
+ * @param[inout] tmp3 user controlled workspace data.
+ *
+ * @return a value `0` on success, a positive values if a recoverable error
+ *         occurred and a negative value of a non-recoverable error occurred.
+ */
+typedef int DDLsJacColFn_CSC(sunindextype j,
+                             sunrealtype t,
+                             N_Vector Y,
+                             N_Vector R,
+                             SUNMatrix J,
+                             sunindextype* nnz,
+                             void* user_data,
+                             N_Vector tmp1,
+                             N_Vector tmp2,
+                             N_Vector tmp3);
 
+/** @brief Enumerates Jacobian callback function types. */
 typedef enum DDLsJacFnId
 {
-  DD_JAC_1,
-  DD_JAC_2
+  DD_JAC_1, /**< type 1 callback, valid for `SUNMATRIX_DENSE` and `SUNMATRIX_SPARSE` of kind `CSR_MAT` */
+  DD_JAC_2  /**< type 2 callback */
 } DDLsJacFnId;
 
 /** @brief Jacobian callback function. */
@@ -76,35 +225,46 @@ typedef struct
 
   union
   {
-    DDLsJacFn1* jacfn1;
-    DDLsJacFn2* jacfn2;
+    DDLsJacFn1* jacfn1; /**< type 1 jacobian callback function */
+    DDLsJacFn2* jacfn2; /**< type 2 jacobian callback function  */
   } fn;
 } DDLsJacFn;
 
-/** @brief Forward sensitivity residual callback function. */
-typedef int DDSensResFn(int Ns,
-                        sunrealtype,
-                        N_Vector,
-                        N_Vector,
-                        N_Vector[static Ns],
-                        N_Vector[static Ns],
-                        void*,
-                        N_Vector,
-                        N_Vector,
-                        N_Vector);
-
-/** @brief Solver session. */
-typedef struct DDMemRec* DDMem;
-
-/** @brief Adjoint sensitivity residual callback function. */
-typedef int DDResFnB(sunrealtype, N_Vector, N_Vector, N_Vector, N_Vector, void*);
-
-/* ==========================================================================
- * Sparse CSC Jacobian Callback Helper
- * ========================================================================== */
-
-/** @brief Computes the Jacobian on sparse CSC column-wise by calling `fn` for
-    each column. */
+/**
+ * @brief Computes the Jacobian in sparse CSC format column-wise by calling `fn`
+ * to compute each column.
+ *
+ * Assuming a structural analysis d ∈ ℕ[n] of an, possibly high-index, DAE of
+ * size n.
+ *
+ * @param[in] M is the number of scalar residuals in F(t,Y).
+ * @param[in] N is the size n of the possibly high-index, DAE.
+ * @param[in] varofs are the variable offsets d from the structural analysis.
+ * @param[in] fn computes the the j'th M × 1 column of the Jacobian.
+ * @param[in] t is the independent variable.
+ * @param[in] cj is proportional to the inverse of the step-size.
+ * @param[in] Y are the dependent variables and their derivatives. For each
+ *              element `Y[i]`, its derivative w.r.t. `t` is found at `Y[i + 1]`.
+ *
+ * @param[in] R holds the residual values. For each residual `R[i]`, its
+ *              derivative w.r.t. `t` should be stored at `R[i + 1]`.
+ *
+ * @param[out] J holds the values of the n×n Jacobian. This matrix must be of
+ *               type `SUNMATRIX_SPARSE` and of kind `CSC_MAT`.
+ *
+ * @param[in] id indicates if `Y[j]` is a differentiated variable in the
+ *               first-order view of the DAE. If Y[j] = 1 then Y[j] is a
+ *               differentiated variable and if Y[j] = 0 then Y[j] is a purely
+ *               algebraic variable.
+ *
+ * @param[inout] user_data points to user-defined data.
+ * @param[inout] tmp1 user controlled workspace data.
+ * @param[inout] tmp2 user controlled workspace data.
+ * @param[inout] tmp3 user controlled workspace data.
+ *
+ * @return a value `0` on success, a positive values if a recoverable error
+ *         occurred and a negative value of a non-recoverable error occurred.
+ */
 static inline int DDJacFn_CSC(sunindextype M,
                               sunindextype N,
                               const uint8_t* varofs,
@@ -178,9 +338,78 @@ static inline int DDJacFn_CSC(sunindextype M,
   return SUN_SUCCESS;
 }
 
+/**
+ * @brief Forward sensitivity residual callback function.
+ *
+ * For a parametrized residual F(t,Y,p) = 0 (see `DDResFn` and `IDASensResFn`),
+ * with parameters p ∈ ℝ[Ns], this function should compute:
+ *
+ * (dF/dY)Ys[i] + (dF/dp[i]), with Ys[i] = dY/dp[i].
+ *
+ * @param[in] Ns is the number of parameters to compute the residual for.
+ * @param[in] t is the independent variable.
+ * @param[in] Y are the dependent variables and their derivatives. For each
+ *              element `Y[i]`, its derivative w.r.t. `t` is found at `Y[i + 1]`.
+ *
+ * @param[in] R holds the residual values. For each residual `R[i]`, its
+ *              derivative w.r.t. `t` should be stored at `R[i + 1]`.
+ *
+ * @param[in] YS are the sensitivities of `Y` (i.e. `YS[i] = dY/dp[i]`).
+ * @param[out] RS holds the sensitivity residual values, where RS[i] is the
+ *                residual w.r.t. to the i'th parameter.
+ *
+ * @param[inout] user_data points to user-defined data.
+ * @param[inout] tmp1 user controlled workspace data.
+ * @param[inout] tmp2 user controlled workspace data.
+ * @param[inout] tmp3 user controlled workspace data.
+ *
+ * @return a value `0` on success, a positive values if a recoverable error
+ *         occurred and a negative value of a non-recoverable error occurred.
+ */
+typedef int DDSensResFn(int Ns,
+                        sunrealtype t,
+                        N_Vector Y,
+                        N_Vector R,
+                        N_Vector YS[static Ns],
+                        N_Vector RS[static Ns],
+                        void* user_data,
+                        N_Vector tmp1,
+                        N_Vector tmp2,
+                        N_Vector tmp3);
+
+/**
+ * @brief Adjoint sensitivity residual callback function.
+ *
+ * given a structural analysis c,d ∈ ℕ[n] and scalar residual expressions
+ * e ∈ ℝ[n], this function should compute the first-order adjoint DAE
+ * (see `IDAResFnB`) for the low-index DAE
+ *
+ * F(t, Y) = (𝓓(c[0])e[0], … , 𝓓(c[n])e[n]), where 𝓓(k) = dᵏ/dtᵏ.
+ *
+ * @param[in] t is the independent variable.
+ * @param[in] Y are the dependent variables and their derivatives. For each
+ *              element `Y[i]`, its derivative w.r.t. `t` is found at `Y[i + 1]`.
+ * @param[in] yB is the dependent variables of the adjoint DAE.
+ * @param[in] ypB are the derivatives of `yB`, i.e., `d/dt yB = ypB`.
+ * @param[out] rB holds the values of the adjoint residual.
+ * @param[inout] user_data points to user-defined data.
+ *
+ * @return a value `0` on success, a positive values if a recoverable error
+ *         occurred and a negative value of a non-recoverable error occurred.
+ */
+typedef int DDResFnB(sunrealtype t,
+                     N_Vector Y,
+                     N_Vector yB,
+                     N_Vector ypB,
+                     N_Vector rB,
+                     void* user_data);
+
 /* ==========================================================================
  * Solver Interface
  * ========================================================================== */
+
+/** @brief Solver session. */
+typedef struct DDMemRec* DDMem;
 
 /** @brief Creates a solver object. */
 DDMem DDCreate(SUNContext);
@@ -189,14 +418,7 @@ DDMem DDCreate(SUNContext);
 void DDFree(DDMem*);
 
 /** @brief Initializes a solver session. */
-int DDInit(DDMem,
-           Structure[static 1],
-           sunrealtype,
-           DDJacFn0,
-           DDMatrix[static 1],
-           DDResFn,
-           sunrealtype,
-           N_Vector);
+int DDInit(DDMem, Struc, sunrealtype, DDJacFn0, DDMatrix, DDResFn, sunrealtype, N_Vector);
 
 /** @brief Re-initializes a solver session. */
 int DDReInit(DDMem, sunrealtype, N_Vector);
@@ -217,19 +439,19 @@ PivotResult DDPivot(DDMem);
 /** @brief Frees forward sensitivity related data. */
 void DDSensFree(DDMem);
 
-/** @brief Forward sensitivitiy initialization. */
+/** @brief Forward sensitivity initialization. */
 int DDSensInit(DDMem, int Ns, int, DDSensResFn, N_Vector[static Ns]);
 
-/** @brief Re-initialize forward sensitivitiy computaiton. */
+/** @brief Re-initialize forward sensitivity computation. */
 int DDSensReInit(DDMem, int, N_Vector*);
 
-/** @brief Integrates the DAE with checkpointing. */
+/** @brief Integrates the DAE with check-pointing. */
 int DDSolveF(DDMem, sunrealtype, sunrealtype[static 1], N_Vector, int, int[static 1]);
 
 /** @brief Calculates consistent initial values. */
 int DDCalcIC(DDMem, int, sunrealtype);
 
-/** @brief Initialises an adjoint problem. */
+/** @brief Initializes an adjoint problem. */
 int DDAdjInit(DDMem, long, int);
 
 /** @brief Frees data associated with the adjoint problem. */
@@ -238,7 +460,7 @@ void DDAdjFree(DDMem);
 /** @brief Creates a backwards problem. */
 int DDCreateB(DDMem, int[static 1]);
 
-/** @brief Initialises backwards problem. */
+/** @brief Initializes backwards problem. */
 int DDInitB(DDMem, int, DDResFnB, sunrealtype, N_Vector, N_Vector);
 
 /** @brief Calculate consistent initial values for the backwards problem. */
@@ -261,7 +483,7 @@ int DDSetLinearSolver(DDMem, SUNLinearSolver, SUNMatrix);
 /** @brief Set solver tolerances. */
 int DDSSTolerances(DDMem, sunrealtype, sunrealtype);
 
-/** @brief Sets the stoptime for the independent variable */
+/** @brief Sets the stop-time for the independent variable */
 int DDSetStopTime(DDMem, sunrealtype);
 
 /** @brief Sets user data. */
@@ -282,7 +504,7 @@ int DDGetSensConsistentIC(DDMem, N_Vector*);
 /** @brief Set sensitivity parameters. */
 int DDSetSensParams(DDMem, sunrealtype*, sunrealtype*, int*);
 
-/** @brief Compute sensitivity tolarences based on DAE state tolerances. */
+/** @brief Compute sensitivity tolerances based on DAE state tolerances. */
 int DDSensEEtolerances(DDMem);
 
 /** @brief Sets linear solver for a backwards problem. */

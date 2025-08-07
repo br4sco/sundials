@@ -73,10 +73,14 @@ static SUNMatrix jac_linsys_create(void)
  * Non-linear system
  * -------------------------------------------------------------------------- */
 
-static SUNMatrix jac_nonlinsys_create(sunrealtype d2x1, sunrealtype dx1,
-                                      sunrealtype d2x2, sunrealtype dx2,
-                                      sunrealtype x3, sunrealtype d2x4,
-                                      sunrealtype x4, sunrealtype dx5)
+static SUNMatrix jac_nonlinsys_create(sunrealtype d2x1,
+                                      sunrealtype dx1,
+                                      sunrealtype d2x2,
+                                      sunrealtype dx2,
+                                      sunrealtype x3,
+                                      sunrealtype d2x4,
+                                      sunrealtype x4,
+                                      sunrealtype dx5)
 {
   SUNMatrix mat = SUNDenseMatrix(NONLINSYS_N, NONLINSYS_N, CTX);
 

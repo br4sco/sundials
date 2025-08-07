@@ -12,7 +12,7 @@ int main(void)
   SUNContext_Create(SUN_COMM_NULL, &ctx);
 
   SUNMatrix A = SUNDenseMatrix(3, 2, ctx);
-  DDMatrix* B = DDMatWrapDense(A);
+  DDMatrix B  = DDMatWrapDense(A);
 
   TEST_ASSERT(B != NULL);
   DDMatDestroy(B);

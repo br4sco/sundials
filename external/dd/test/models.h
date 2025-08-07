@@ -38,18 +38,6 @@ static const sunindextype LOTKA_VOLTERRA_N       = 2;
 static const uint8_t LOTKA_VOLTERRA_C[]          = {0, 0}; /* f₁, f₂ */
 static const uint8_t LOTKA_VOLTERRA_D[]          = {1, 1}; /* x', y' */
 static const sunindextype LOTKA_VOLTERRA_JAC_NNZ = 6;
-static const sunrealtype LOTKA_VOLTERRA_JAC_STRUCTURE_CSR[] = {
-  ONE,  ONE,  ONE,  ZERO, /* x */
-  ONE,  ZERO, ONE,  ZERO, /* x' */
-  ONE,  ONE,  ZERO, ONE,  /* y */
-  ZERO, ONE,  ZERO, ONE,  /* y' */
-};
-static const sunrealtype LOTKA_VOLTERRA_JAC_STRUCTURE_CSC[] = {
-  ONE,  ONE,  ONE,  ZERO, /* x */
-  ONE,  ZERO, ONE,  ZERO, /* x' */
-  ONE,  ONE,  ZERO, ONE,  /* y */
-  ZERO, ONE,  ZERO, ONE,  /* y' */
-};
 
 #define LV_X(Y, l) (N_VGetArrayPointer(Y)[l])
 #define LV_Y(Y, l) (N_VGetArrayPointer(Y)[2 + l])
@@ -66,14 +54,15 @@ typedef struct
   sunrealtype d; /* Preadotr death rate. */
 } LotkaVolterraParams;
 
-int LotkaVolterraRes(SUNDIALS_MAYBE_UNUSED sunrealtype tt, /*  */
-                     N_Vector Y,                           /* {x, x', y, y'} */
-                     N_Vector R,                           /* {f₁, f₂, } */
+int LotkaVolterraRes(SUNDIALS_MAYBE_UNUSED sunrealtype t,
+                     N_Vector Y, /* {x, x', y, y'} */
+                     N_Vector R, /* {f₁, f₂, ...} */
                      void* user_data)
 {
   const LotkaVolterraParams p = *((LotkaVolterraParams*)user_data);
-  const sunrealtype x = LV_X(Y, 0), dx = LV_X(Y, 1), y = LV_Y(Y, 0),
-                    dy = LV_Y(Y, 1);
+  const sunrealtype x = LV_X(Y, 0), dx = LV_X(Y, 1),
+
+                    y = LV_Y(Y, 0), dy = LV_Y(Y, 1);
 
   LV_R1(R) = dx - p.a * x + p.b * x * y;
   LV_R2(R) = dy - p.d * x * y + p.c * y;
@@ -119,7 +108,7 @@ int LotkaVolterraResS(int Ns,
 
 int LotkaVolterraJacf0(SUNDIALS_MAYBE_UNUSED sunrealtype t,
                        SUNDIALS_MAYBE_UNUSED N_Vector Y,
-                       DDMatrix jac0[static 1],
+                       DDMatrix jac0,
                        SUNDIALS_MAYBE_UNUSED void* user_data)
 {
   SUNMatrix J0 = DDMatGetSUNMat(jac0);
@@ -452,7 +441,7 @@ static inline int PendulumJacColFn_CSC(sunindextype j,
 int PendulumJacfn_CSC(SUNDIALS_MAYBE_UNUSED sunrealtype t,
                       sunrealtype cj,
                       N_Vector Y,
-                      SUNDIALS_MAYBE_UNUSED N_Vector R,
+                      N_Vector R,
                       SUNMatrix J,
                       N_Vector id,
                       void* user_data,
@@ -593,7 +582,7 @@ int PendulumResB(SUNDIALS_MAYBE_UNUSED sunrealtype t,
 
 int PendulumJacf0(SUNDIALS_MAYBE_UNUSED sunrealtype t,
                   N_Vector Y,
-                  DDMatrix J0[static 1],
+                  DDMatrix J0,
                   SUNDIALS_MAYBE_UNUSED void* user_data)
 {
   PendulumData* data = (PendulumData*)user_data;
