@@ -83,7 +83,7 @@ int main(int argc, char* argv[])
 
   /* Compute J0 at the initial time. */
   TEST_ASSERT(SUNMatZero(J0) == SUN_SUCCESS);
-  TEST_ASSERT(LotkaVolterraJacf0(t0, Y, dd_J0, &p) == 0);
+  TEST_ASSERT(LotkaVolterraJacf0(t0, Y, J0, &p) == 0);
 
   /* Create solver session. */
   DDMem dd_mem = DDCreate(sunctx);

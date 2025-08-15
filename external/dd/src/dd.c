@@ -662,7 +662,7 @@ PivotResult DDPivot(DDMem dd_mem)
     return PIVOT_FAIL;
   }
 
-  if (dd_mem->dd_jacf0(tn, yy, J0, dd_mem->dd_user_data) != 0)
+  if (dd_mem->dd_jacf0(tn, yy, DDMatGetSUNMat(J0), dd_mem->dd_user_data) != 0)
   {
     DDHandleErr(SUN_ERR_OP_FAIL);
     return PIVOT_FAIL;

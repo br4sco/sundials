@@ -72,7 +72,7 @@ typedef int DDResFn(sunrealtype t, N_Vector Y, N_Vector R, void* user_data);
  * @return a value `0` on success, a positive values if a recoverable error
  *         occurred and a negative value of a non-recoverable error occurred.
  */
-typedef int DDJacFn0(sunrealtype t, N_Vector Y, DDMatrix J, void* user_data);
+typedef int DDJacFn0(sunrealtype t, N_Vector Y, SUNMatrix J, void* user_data);
 
 /**
  * @brief Jacobian callback function, type 1, for `DDResFn`. Supports matrix

@@ -108,13 +108,11 @@ int LotkaVolterraResS(int Ns,
 
 int LotkaVolterraJacf0(SUNDIALS_MAYBE_UNUSED sunrealtype t,
                        SUNDIALS_MAYBE_UNUSED N_Vector Y,
-                       DDMatrix jac0,
+                       SUNMatrix A,
                        SUNDIALS_MAYBE_UNUSED void* user_data)
 {
-  SUNMatrix J0 = DDMatGetSUNMat(jac0);
-
-  SM_ELEMENT_D(J0, 0, 0) = ONE;
-  SM_ELEMENT_D(J0, 1, 1) = ONE;
+  SM_ELEMENT_D(A, 0, 0) = ONE;
+  SM_ELEMENT_D(A, 1, 1) = ONE;
 
   return 0;
 }
@@ -582,14 +580,13 @@ int PendulumResB(SUNDIALS_MAYBE_UNUSED sunrealtype t,
 
 int PendulumJacf0(SUNDIALS_MAYBE_UNUSED sunrealtype t,
                   N_Vector Y,
-                  DDMatrix J0,
+                  SUNMatrix A,
                   SUNDIALS_MAYBE_UNUSED void* user_data)
 {
   PendulumData* data = (PendulumData*)user_data;
   sunrealtype m = data->m, l = data->param[0];
 
   sunrealtype x = P_X(Y, 0), y = P_Y(Y, 0);
-  SUNMatrix A = DDMatGetSUNMat(J0);
 
   SM_ELEMENT_D(A, 0, 0) = m;
   SM_ELEMENT_D(A, 0, 2) = x / l;
