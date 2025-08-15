@@ -33,6 +33,9 @@ $(BUILD_DIR):
 		-DCMAKE_EXPORT_COMPILE_COMMANDS=1\
 		..
 
+install: $(BUILD_DIR)
+	make -C $(BUILD_DIR) install
+
 .PHONY: clean
 clean:
 	rm -rf $(BUILD_DIR)
