@@ -12,6 +12,7 @@
 #include <sunmatrix/sunmatrix_sparse.h>
 
 #include "dd.h"
+#include "dd_math.h"
 #include "matrix.h"
 #include "models.h"
 #include "structure.h"
@@ -75,7 +76,7 @@ int main(int argc, char* argv[])
   data->param[1]     = g;
 
   /* Set initial values. */
-  sunrealtype theta0 = SUN_RCONST(M_PI) / FIVE + SUN_RCONST(M_PI) / TWO;
+  sunrealtype theta0 = SUN_RCONST(PI) / FIVE + SUN_RCONST(PI) / TWO;
   PendulumY0(data, theta0, Y);
 
   /* Compute J0 at the initial time. */
