@@ -1,5 +1,4 @@
 #include <idas/idas.h>
-#include <math.h>
 #include <nvector/nvector_serial.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -32,7 +31,8 @@ int main(int argc, char* argv[])
 
   /* Compute DAE structure. */
   DAEStruct st =
-    STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, PENDULUM_EQN_NAMES, PENDULUM_VAR_NAMES);
+    STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, PENDULUM_VAR_IDX_MAP, PENDULUM_EQN_NAMES, PENDULUM_VAR_NAMES);
+
   TEST_ASSERT(st);
 
   /* Setup Sundials context. */
@@ -118,13 +118,14 @@ int main(int argc, char* argv[])
     PivotResult pr = DDPivot(dd_mem);
     TEST_ASSERT(pr >= 0);
 
-    const sunrealtype x = P_X(Y, 0), y = P_Y(Y, 0), lam = P_LAMBDA(Y);
+    const sunrealtype x = P_Ith(Y, 0, 0), y = P_Ith(Y, 1, 0),
+                      lam = P_Ith(Y, 2, 0),
 
-    const sunrealtype xl = P_X(YS[0], 0), yl = P_Y(YS[0], 0),
-                      laml = P_LAMBDA(YS[0]);
+                      xl = P_Ith(YS[0], 0, 0), yl = P_Ith(YS[0], 1, 0),
+                      laml = P_Ith(YS[0], 2, 0),
 
-    const sunrealtype xg = P_X(YS[1], 0), yg = P_Y(YS[1], 0),
-                      lamg = P_LAMBDA(YS[1]);
+                      xg = P_Ith(YS[1], 0, 0), yg = P_Ith(YS[1], 1, 0),
+                      lamg = P_Ith(YS[1], 2, 0);
 
     fprintf(
       file,

@@ -119,17 +119,18 @@ typedef int DDLsJacFn1(
  * at the same differentiation order. Hence, assuming j is the first such
  * variable, then J[m,j] = 1 and J[m,k] = -cj.
  *
+ * @param[in] yy_diff_alias_row indicates if it for j holds that `yy[j] = yp[k]`
+ *                              for some k in the first-order view of the DAE.
+ *
+ * @param[in] yy_diff_alias_row indicates if it for j holds that `yy[k] = yp[j]`
+ *                              for some k in the first-order view of the DAE.
+ *
  * @param[in] t is the independent variable.
  * @param[in] cj is proportional to the inverse of the step-size.
  * @param[in] Y are the dependent variables and their derivatives
  * @param[in] R holds the residual values and their derivatives.
  * @param[out] J holds the values of the n×n Jacobian. Only non-zero values
  *               needs to be written to `J`.
- *
- * @param[in] id indicates if `Y[j]` is a differentiated variable in the
- *               first-order view of the DAE. If Y[j] = 1 then Y[j] is a
- *               differentiated variable and if Y[j] = 0 then Y[j] is a purely
- *               algebraic variable.
  *
  * @param[inout] user_data points to user-defined data.
  * @param[inout] tmp1 user controlled workspace data.
@@ -140,12 +141,13 @@ typedef int DDLsJacFn1(
  *         occurred and a negative value of a non-recoverable error occurred.
  */
 typedef int DDLsJacFn2(
+  const sunindextype yy_diff_alias_row[static 1],
+  const sunindextype yp_diff_alias_row[static 1],
   sunrealtype t,
   sunrealtype cj,
   N_Vector Y,
   N_Vector R,
   SUNMatrix J,
-  N_Vector id,
   void* user_data,
   N_Vector tmp1,
   N_Vector tmp2,
@@ -220,21 +222,19 @@ typedef struct
  * Assuming a structural analysis d ∈ ℕ[n] of an, possibly high-index, DAE of
  * size n.
  *
- * @param[in] M is the number of scalar residuals in F(t,Y).
- * @param[in] N is the size n of the possibly high-index, DAE.
- * @param[in] varofs are the variable offsets d from the structural analysis.
  * @param[in] fn computes the the j'th M × 1 column of the Jacobian.
+ * @param[in] yy_diff_alias_row indicates if it for j holds that `yy[j] = yp[k]`
+ *                              for some k in the first-order view of the DAE.
+ *
+ * @param[in] yy_diff_alias_row indicates if it for j holds that `yy[k] = yp[j]`
+ *                              for some k in the first-order view of the DAE.
+ *
  * @param[in] t is the independent variable.
  * @param[in] cj is proportional to the inverse of the step-size.
  * @param[in] Y are the dependent variables and their derivatives.
  * @param[in] R holds the residual values and their derivatives.
  * @param[out] J holds the values of the n×n Jacobian. This matrix must be of
  *               type `SUNMATRIX_SPARSE` and of kind `CSC_MAT`.
- *
- * @param[in] id indicates if `Y[j]` is a differentiated variable in the
- *               first-order view of the DAE. If Y[j] = 1 then Y[j] is a
- *               differentiated variable and if Y[j] = 0 then Y[j] is a purely
- *               algebraic variable.
  *
  * @param[inout] user_data points to user-defined data.
  * @param[inout] tmp1 user controlled workspace data.
@@ -246,15 +246,14 @@ typedef struct
  */
 static inline int DDJacFn_CSC(
   sunindextype M,
-  sunindextype N,
-  const uint8_t* varofs,
   DDLsJacColFn_CSC* fn,
+  const sunindextype yy_diff_alias_row[static 1],
+  const sunindextype yp_diff_alias_row[static 1],
   sunrealtype t,
   sunrealtype cj,
   N_Vector Y,
   N_Vector R,
   SUNMatrix J,
-  N_Vector id,
   void* user_data,
   N_Vector tmp1,
   N_Vector tmp2,
@@ -267,50 +266,32 @@ static inline int DDJacFn_CSC(
   SUNCheck(SM_SPARSETYPE_S(J) == CSC_MAT, SUN_ERR_ARG_OUTOFRANGE);
   SUNCheck((0 < M) && (M < SM_ROWS_S(J)), SUN_ERR_ARG_OUTOFRANGE);
 
-  const sunrealtype ONE     = SUN_RCONST(1.0);
-  const sunrealtype* id_arr = N_VGetArrayPointer(id);
+  const sunrealtype ONE = SUN_RCONST(1.0);
+  const sunindextype N  = SM_COLUMNS_S(J);
 
-  sunindextype j = 0, nnz = 0, row = M;
+  SUNCheck(M < N, SUN_ERR_ARG_OUTOFRANGE);
 
-  for (sunindextype var = 0; var < N; ++var)
+  sunindextype nnz = 0;
+  for (sunindextype j = 0; j < N; ++j)
   {
     SM_INDEXPTRS_S(J)[j] = nnz;
-
-    int flag = fn(j, t, Y, R, J, &nnz, user_data, tmp1, tmp2, tmp3);
+    int flag             = fn(j, t, Y, R, J, &nnz, user_data, tmp1, tmp2, tmp3);
     if (flag != 0) { return flag; }
 
-    if (id_arr[j] == ONE)
+    sunindextype yy_alias_row = yy_diff_alias_row[j];
+    if (yy_alias_row >= 0)
     {
       SM_DATA_S(J)[nnz]      = -cj;
-      SM_INDEXVALS_S(J)[nnz] = row;
+      SM_INDEXVALS_S(J)[nnz] = yy_alias_row;
       nnz += 1;
     }
 
-    j += 1;
-
-    for (sunindextype l = 0; l < varofs[var]; ++l)
+    sunindextype yp_alias_row = yp_diff_alias_row[j];
+    if (yp_alias_row >= 0)
     {
-      SM_INDEXPTRS_S(J)[j] = nnz;
-
-      int flag = fn(j, t, Y, R, J, &nnz, user_data, tmp1, tmp2, tmp3);
-      if (flag != 0) { return flag; }
-
-      if (id_arr[j - 1] == ONE)
-      {
-        SM_DATA_S(J)[nnz]      = ONE;
-        SM_INDEXVALS_S(J)[nnz] = row;
-        nnz += 1;
-        row += 1;
-      }
-
-      if (id_arr[j] == ONE)
-      {
-        SM_DATA_S(J)[nnz]      = -cj;
-        SM_INDEXVALS_S(J)[nnz] = row;
-        nnz += 1;
-      }
-
-      j += 1;
+      SM_DATA_S(J)[nnz]      = ONE;
+      SM_INDEXVALS_S(J)[nnz] = yp_alias_row;
+      nnz += 1;
     }
   }
 

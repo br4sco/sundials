@@ -223,13 +223,9 @@ static int DDResSWrapper(
 );
 
 static int DDResBWrapper(sunrealtype, N_Vector, N_Vector, N_Vector, N_Vector, N_Vector, void*);
-
 static void DDSetYpFromY(PivMem, N_Vector, N_Vector);
-
-static void DDSetId(DAEStruct, PivMem, N_Vector);
-
+static void DDSetId(PivMem, N_Vector);
 static void DDAdjCleanup(DDMem dd_mem);
-
 static void DDSensCleanup(DDMem dd_mem);
 
 /* --------------------------------------------------------------------------
@@ -501,7 +497,7 @@ int DDInit(
     DDHandleErr(SUN_ERR_MEM_FAIL);
     return SUN_ERR_MEM_FAIL;
   }
-  DDSetId(st, pm, dd_mem->dd_id);
+  DDSetId(pm, dd_mem->dd_id);
 
   if (IDAInit(dd_mem->ida_mem, DDResWrapper, t0, Y0, dd_mem->dd_yp) < 0)
   {
@@ -535,9 +531,8 @@ static int DDResWrapper(sunrealtype t, N_Vector yy, N_Vector yp, N_Vector rr, vo
   sunrealtype* rr_arr = N_VGetArrayPointer(rr);
   for (sunindextype i = 0; i < N_diff; ++i)
   {
-    const sunindextype var = pm->diff_vars[i];
-
-    rr_arr[rr_ofs + i] = yy_arr[var + 1] - yp_arr[var];
+    const Pair_sunindextype p = pm->diff_var_aliases[i];
+    rr_arr[rr_ofs + i]        = yy_arr[p.snd] - yp_arr[p.fst];
   }
 
   /* Evaluate user supplied residual function. */
@@ -555,21 +550,19 @@ static void DDSetYpFromY(PivMem pm, N_Vector yy, N_Vector yp)
 
   for (sunindextype i = 0; i < pm->N_diff_vars; ++i)
   {
-    const sunindextype var = pm->diff_vars[i];
-
-    yp_arr[var + 1] = yy_arr[var];
+    const Pair_sunindextype p = pm->diff_var_aliases[i];
+    yp_arr[p.fst]             = yy_arr[p.snd];
   }
 }
 
-static void DDSetId(DAEStruct st, PivMem pm, N_Vector id)
+static void DDSetId(PivMem pm, N_Vector id)
 {
   N_VConst(ZERO, id);
   sunrealtype* id_arr = N_VGetArrayPointer(id);
-  for (sunindextype i = 0; i < pm->NNZ_spec; ++i)
+  for (sunindextype i = 0; i < pm->N_diff_vars; ++i)
   {
-    const sunindextype var = pm->NZ_spec[i];
-    const sunindextype ofs = st->var_to_idx[var];
-    for (uint8_t j = 0; j < pm->spec[var]; ++j) { id_arr[ofs + j] = ONE; }
+    const Pair_sunindextype p = pm->diff_var_aliases[i];
+    id_arr[p.fst]             = ONE;
   }
 }
 
@@ -698,7 +691,7 @@ PivotResult DDPivot(DDMem dd_mem)
   {
     N_Vector id = dd_mem->dd_id;
 
-    DDSetId(st, pm, id);
+    DDSetId(pm, id);
 
     if (IDASetId(ida_mem, id) < 0)
     {
@@ -903,9 +896,8 @@ static int DDResSWrapper(
     sunrealtype* rrS_arr = N_VGetArrayPointer(rrS[i]);
     for (sunindextype j = 0; j < N_diff; ++j)
     {
-      const sunindextype var = pm->diff_vars[j];
-
-      rrS_arr[rr_ofs + j] = yyS_arr[var + 1] - ypS_arr[var];
+      const Pair_sunindextype p = pm->diff_var_aliases[j];
+      rrS_arr[rr_ofs + j]       = yyS_arr[p.snd] - ypS_arr[p.fst];
     }
   }
 
@@ -1547,10 +1539,9 @@ static int DDLsJacFnWrapper1_Dense(
 
   for (sunindextype i = 0; i < N_diff; ++i)
   {
-    const sunindextype var = pm->diff_vars[i];
-
-    SM_ELEMENT_D(J, row_ofs + i, var)     = -cj;
-    SM_ELEMENT_D(J, row_ofs + i, var + 1) = ONE;
+    const Pair_sunindextype p           = pm->diff_var_aliases[i];
+    SM_ELEMENT_D(J, row_ofs + i, p.fst) = -cj;
+    SM_ELEMENT_D(J, row_ofs + i, p.snd) = ONE;
   }
 
   /* Call user supplied Jacobian callback function. */
@@ -1585,15 +1576,12 @@ static int DDLsJacFnWrapper1_CSR(
   sunindextype row = SM_ROWS_S(J) - N_diff, nnz = SM_NNZ_S(J) - 2 * N_diff;
   for (sunindextype i = 0; i < N_diff; ++i)
   {
-    const sunindextype var = pm->diff_vars[i];
-
-    SM_INDEXVALS_S(J)[nnz] = var;
-    SM_DATA_S(J)[nnz]      = -cj;
-
-    SM_INDEXVALS_S(J)[nnz + 1] = var + 1;
+    const Pair_sunindextype p  = pm->diff_var_aliases[i];
+    SM_INDEXVALS_S(J)[nnz]     = p.fst;
+    SM_DATA_S(J)[nnz]          = -cj;
+    SM_INDEXVALS_S(J)[nnz + 1] = p.snd;
     SM_DATA_S(J)[nnz + 1]      = ONE;
-
-    SM_INDEXPTRS_S(J)[row] = nnz;
+    SM_INDEXPTRS_S(J)[row]     = nnz;
 
     row += 1;
     nnz += 2;
@@ -1628,7 +1616,8 @@ static int DDLsJacFnWrapper2(
 
   void* ud = dd_mem->dd_user_data;
   int flag =
-    dd_mem->dd_jacfn2(t, cj, yy, rr, J, dd_mem->dd_id, ud, tmp1, tmp2, tmp3);
+    dd_mem
+      ->dd_jacfn2(dd_mem->dd_pm->yy_diff_alias_row, dd_mem->dd_pm->yp_diff_alias_row, t, cj, yy, rr, J, ud, tmp1, tmp2, tmp3);
 
   return flag;
 }

@@ -8,7 +8,8 @@ void STDestroy(DAEStruct st)
 {
   if (st)
   {
-    uint8_t K = st->K;
+    sunindextype size = st->DAE_size;
+    uint8_t K         = st->K;
 
     if (st->eqnofs != NULL)
     {
@@ -32,6 +33,20 @@ void STDestroy(DAEStruct st)
     {
       free(st->var_to_idx);
       st->var_to_idx = NULL;
+    }
+
+    sunindextype** var_idx_map = st->var_idx_map;
+    if (var_idx_map != NULL)
+    {
+      for (sunindextype j = 0; j < size; ++j) { var_idx_map[j] = NULL; }
+      free(var_idx_map);
+      st->var_idx_map_data = NULL;
+    }
+
+    if (st->var_idx_map_data != NULL)
+    {
+      free(st->var_idx_map_data);
+      st->var_idx_map_data = NULL;
     }
 
     sunindextype** eqns = st->eqns_k;
@@ -66,61 +81,87 @@ void STDestroy(DAEStruct st)
   }
 }
 
-DAEStruct STCreate(sunindextype N,
-               const uint8_t eqnofs[static N],
-               const uint8_t varofs[static N],
-               char** eqn_names,
-               char** var_names)
+DAEStruct STCreate(
+  sunindextype size,
+  const uint8_t eqnofs[static size],
+  const uint8_t varofs[static size],
+  const sunindextype* var_idx_map[static size],
+  char** eqn_names,
+  char** var_names
+)
 {
   DAEStruct st = malloc(sizeof(*st));
   if (st == NULL) { return NULL; }
 
-  st->DAE_size = N;
+  st->DAE_size = size;
 
   uint8_t K = 0;
-  for (sunindextype i = 0; i < N; ++i)
+  for (sunindextype i = 0; i < size; ++i)
   {
     if (varofs[i] > K) { K = varofs[i]; }
   }
   K++;
   st->K = K;
 
-  st->M             = 0;
-  st->N             = 0;
-  st->DAE_1ord_size = 0;
-  for (sunindextype i = 0; i < N; ++i)
+  st->M                 = 0;
+  st->N                 = 0;
+  st->DAE_backward_size = 0;
+  for (sunindextype i = 0; i < size; ++i)
   {
     st->M += eqnofs[i] + 1;
     st->N += varofs[i] + 1;
-    st->DAE_1ord_size += SUNMAX(varofs[i], 1);
+    st->DAE_backward_size += SUNMAX(varofs[i], 1);
   }
 
-  st->eqnofs = malloc(N * sizeof(uint8_t));
+  st->eqnofs = malloc(size * sizeof(uint8_t));
   if (st->eqnofs == NULL)
   {
     STDestroy(st);
     return NULL;
   }
 
-  st->varofs = malloc(N * sizeof(uint8_t));
+  st->varofs = malloc(size * sizeof(uint8_t));
   if (st->varofs == NULL)
   {
     STDestroy(st);
     return NULL;
   }
 
-  st->eqn_to_idx = malloc(N * sizeof(sunindextype));
+  st->eqn_to_idx = malloc(size * sizeof(sunindextype));
   if (st->eqn_to_idx == NULL)
   {
     STDestroy(st);
     return NULL;
   }
 
-  st->var_to_idx = malloc(N * sizeof(sunindextype));
+  st->var_to_idx = malloc(size * sizeof(sunindextype));
   if (st->var_to_idx == NULL)
   {
     STDestroy(st);
     return NULL;
+  }
+
+  st->var_idx_map = malloc(size * sizeof(sunindextype));
+  if (st->var_idx_map == NULL)
+  {
+    STDestroy(st);
+    return NULL;
+  }
+  st->var_idx_map_data = malloc(st->N * sizeof(sunindextype));
+  if (st->var_idx_map_data == NULL)
+  {
+    STDestroy(st);
+    return NULL;
+  }
+  sunindextype ofs = 0;
+  for (sunindextype j = 0; j < size; ++j)
+  {
+    st->var_idx_map[j] = st->var_idx_map_data + ofs;
+    for (uint8_t k = 0; k <= varofs[j]; ++k)
+    {
+      st->var_idx_map_data[ofs] = var_idx_map[j][k];
+      ++ofs;
+    }
   }
 
   st->M_k = calloc(K, sizeof(sunindextype));
@@ -167,7 +208,7 @@ DAEStruct STCreate(sunindextype N,
 
   sunindextype eacc = 0;
   sunindextype vacc = 0;
-  for (sunindextype i = 0; i < N; ++i)
+  for (sunindextype i = 0; i < size; ++i)
   {
     const uint8_t e   = eqnofs[i];
     const uint8_t v   = varofs[i];
@@ -183,7 +224,7 @@ DAEStruct STCreate(sunindextype N,
   sunindextype j_ofs = 0;
   for (uint8_t k = 0; k < K; ++k)
   {
-    for (sunindextype i = 0; i < N; ++i)
+    for (sunindextype i = 0; i < size; ++i)
     {
       if (ST_STAGE_FROM_INDEX(st, k) + (int)eqnofs[i] >= 0)
       {

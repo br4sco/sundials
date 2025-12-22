@@ -12,12 +12,13 @@ int main(void)
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
   sunindextype i, j, k;
-  DAEStruct st = STCreate(LOTKA_VOLTERRA_N, LOTKA_VOLTERRA_C, LOTKA_VOLTERRA_D,
-                      NULL, NULL);
+  DAEStruct st =
+    STCreate(LOTKA_VOLTERRA_N, LOTKA_VOLTERRA_C, LOTKA_VOLTERRA_D, LOTKA_VOLTERRA_VAR_IDX_MAP, NULL, NULL);
+
   TEST_ASSERT(st != NULL);
 
   TEST_ASSERT(st->DAE_size == 2);
-  TEST_ASSERT(st->DAE_1ord_size == 2);
+  TEST_ASSERT(st->DAE_backward_size == 2);
 
   TEST_ASSERT(st->eqnofs[0] == 0); /* f₁(x', x, y) */
   TEST_ASSERT(st->eqnofs[1] == 0); /* f₂(y', x, y) */

@@ -30,6 +30,14 @@
     T val;                        \
   } Option_##NAME
 
+/** @brief Defines a product of the types `U` and `V`. */
+#define DD_DEFINE_PAIR(NAME, U, V) \
+  typedef struct                   \
+  {                                \
+    U fst;                         \
+    V snd;                         \
+  } Pair_##NAME
+
 /* ==========================================================================
  * Constants
  * ========================================================================== */

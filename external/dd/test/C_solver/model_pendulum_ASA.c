@@ -31,7 +31,7 @@ int main(void)
 
   /* Compute DAE structure. */
   DAEStruct st =
-    STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, PENDULUM_EQN_NAMES, PENDULUM_VAR_NAMES);
+    STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, PENDULUM_VAR_IDX_MAP, PENDULUM_EQN_NAMES, PENDULUM_VAR_NAMES);
   TEST_ASSERT(st);
 
   /* Setup Sundials context. */
@@ -111,7 +111,8 @@ int main(void)
     PivotResult pr = DDPivot(dd_mem);
     TEST_ASSERT(pr >= 0);
 
-    const sunrealtype x = P_X(Y, 0), y = P_Y(Y, 0), lam = P_LAMBDA(Y);
+    const sunrealtype x = P_Ith(Y, 0, 0), y = P_Ith(Y, 1, 0),
+                      lam = P_Ith(Y, 2, 0);
 
     fprintf(filef, "%.20f,%.20f,%.20f,%.20f,%.20f,%d\n", t, x, y, lam, x * x + y * y - l * l, pr == PIVOT_SUCCESS ? 1 : 0);
 
@@ -127,7 +128,7 @@ int main(void)
    * ------------------------------------------------------------------------ */
 
   /* Allocate state and set initial values */
-  N_Vector yyB = N_VNew_Serial(st->DAE_1ord_size, ctx);
+  N_Vector yyB = N_VNew_Serial(st->DAE_backward_size, ctx);
   TEST_ASSERT(yyB);
 
   N_Vector ypB = N_VClone(yyB);
@@ -148,7 +149,7 @@ int main(void)
 
   TEST_ASSERT(DDSetUserDataB(dd_mem, indexB, data) == IDA_SUCCESS);
 
-  SUNMatrix AB = SUNDenseMatrix(st->DAE_1ord_size, st->DAE_1ord_size, ctx);
+  SUNMatrix AB = SUNDenseMatrix(st->DAE_backward_size, st->DAE_backward_size, ctx);
   TEST_ASSERT(AB);
   SUNLinearSolver LSB = SUNLinSol_Dense(yyB, AB, ctx);
   TEST_ASSERT(LSB);

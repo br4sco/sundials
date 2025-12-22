@@ -41,7 +41,8 @@ int main(int argc, char* argv[])
   char* eqn_names[] = {"f₁", "f₂"};
   char* var_names[] = {"x", "y"};
   DAEStruct st =
-    STCreate(LOTKA_VOLTERRA_N, LOTKA_VOLTERRA_C, LOTKA_VOLTERRA_D, eqn_names, var_names);
+    STCreate(LOTKA_VOLTERRA_N, LOTKA_VOLTERRA_C, LOTKA_VOLTERRA_D, LOTKA_VOLTERRA_VAR_IDX_MAP, eqn_names, var_names);
+
   TEST_ASSERT(st);
 
   const sunindextype N = st->N;
@@ -73,10 +74,10 @@ int main(int argc, char* argv[])
   /* Set initial values. */
   sunindextype t0 = SUN_RCONST(0.0);
   N_VConst(SUN_RCONST(0.0), Y);
-  LV_X(Y, 0) = SUN_RCONST(1.0);
-  LV_X(Y, 1) = p.a - p.b;
-  LV_Y(Y, 0) = SUN_RCONST(1.0);
-  LV_Y(Y, 1) = p.d - p.c;
+  LV_Ith(Y, 0, 0) = SUN_RCONST(1.0);
+  LV_Ith(Y, 0, 1) = p.a - p.b;
+  LV_Ith(Y, 1, 0) = SUN_RCONST(1.0);
+  LV_Ith(Y, 1, 1) = p.d - p.c;
   for (int i = 0; i < LOTKA_VOLTERRA_NP; ++i)
   {
     N_VConst(SUN_RCONST(0.0), YS[i]);
@@ -176,10 +177,17 @@ int main(int argc, char* argv[])
     PivotResult pr = DDPivot(dd_mem);
     TEST_ASSERT(pr >= 0);
 
-    const sunrealtype x = LV_X(Y, 0), y = LV_Y(Y, 0);
-    const sunrealtype
-      xS[] = {LV_X(YS[0], 0), LV_X(YS[1], 0), LV_X(YS[2], 0), LV_X(YS[3], 0)},
-      yS[] = {LV_Y(YS[0], 0), LV_Y(YS[1], 0), LV_Y(YS[2], 0), LV_Y(YS[3], 0)};
+    const sunrealtype x = LV_Ith(Y, 0, 0), y = LV_Ith(Y, 1, 0);
+    const sunrealtype xS[] =
+      {LV_Ith(YS[0], 0, 0),
+       LV_Ith(YS[1], 0, 0),
+       LV_Ith(YS[2], 0, 0),
+       LV_Ith(YS[3], 0, 0)};
+    const sunrealtype yS[] =
+      {LV_Ith(YS[0], 1, 0),
+       LV_Ith(YS[1], 1, 0),
+       LV_Ith(YS[2], 1, 0),
+       LV_Ith(YS[3], 1, 0)};
 
     fprintf(
       res,

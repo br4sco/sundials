@@ -13,7 +13,9 @@ int main(void)
 {
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
-  DAEStruct st = STCreate(NONLINSYS_N, NONLINSYS_C, NONLINSYS_D, NULL, NULL);
+  DAEStruct st =
+    STCreate(NONLINSYS_N, NONLINSYS_C, NONLINSYS_D, NONLINSYS_VAR_IDX_MAP, NULL, NULL);
+
   TEST_ASSERT(st != NULL);
   DDMatrix jac = DDMatWrapDense(jac_nonlinsys_create(1, 1, 1, 1, 1, 1, 1, 1));
   TEST_ASSERT(jac != NULL);

@@ -69,11 +69,13 @@ static DDMatrixWorkspace DDMatCreateWS_Dense(DDMatrix self)
   return ws;
 }
 
-SUNErrCode DDMatPivot_Dense(DDMatrix self,
-                            DDMatrixWorkspace ws,
-                            sunrealtype tol,
-                            sunindextype n,
-                            sunindextype colpivots[static n])
+SUNErrCode DDMatPivot_Dense(
+  DDMatrix self,
+  DDMatrixWorkspace ws,
+  sunrealtype tol,
+  sunindextype n,
+  sunindextype colpivots[static n]
+)
 {
   SUNMatrix sm_self = DDMatGetSUNMat(self);
   SUNFunctionBegin(sm_self->sunctx);
@@ -145,8 +147,8 @@ SUNErrCode DDMatPivot_Dense(DDMatrix self,
         SM_ELEMENT_D(sm_self, r[i], c[k]) = SUN_RCONST(0.0);
         for (sunindextype j = k + 1; j < n; ++j)
         {
-          SM_ELEMENT_D(sm_self, r[i],
-                       c[j]) -= scaleval * SM_ELEMENT_D(sm_self, r[k], c[j]);
+          SM_ELEMENT_D(sm_self, r[i], c[j]) -= scaleval *
+                                               SM_ELEMENT_D(sm_self, r[k], c[j]);
         }
       }
     }
@@ -155,11 +157,13 @@ SUNErrCode DDMatPivot_Dense(DDMatrix self,
   return SUN_SUCCESS;
 }
 
-static DDMatrix DDMatCloneSub_Dense(DDMatrix self,
-                                    sunindextype m,
-                                    const sunindextype rows[static m],
-                                    sunindextype n,
-                                    const sunindextype cols[static n])
+static DDMatrix DDMatCloneSub_Dense(
+  DDMatrix self,
+  sunindextype m,
+  const sunindextype rows[static m],
+  sunindextype n,
+  const sunindextype cols[static n]
+)
 {
   SUNMatrix sm_self = DDMatGetSUNMat(self);
   SUNFunctionBegin(sm_self->sunctx);
@@ -174,12 +178,10 @@ static DDMatrix DDMatCloneSub_Dense(DDMatrix self,
 
   for (sunindextype j = 0; j < n; ++j)
   {
-    SUNCheckNull(cols[j] >= 0 && cols[j] < SM_COLUMNS_D(sm_self),
-                 SUN_ERR_ARG_DIMSMISMATCH);
+    SUNCheckNull(cols[j] >= 0 && cols[j] < SM_COLUMNS_D(sm_self), SUN_ERR_ARG_DIMSMISMATCH);
     for (sunindextype i = 0; i < m; ++i)
     {
-      SUNCheckNull(rows[i] >= 0 && rows[i] < SM_ROWS_D(sm_self),
-                   SUN_ERR_ARG_DIMSMISMATCH);
+      SUNCheckNull(rows[i] >= 0 && rows[i] < SM_ROWS_D(sm_self), SUN_ERR_ARG_DIMSMISMATCH);
       SM_ELEMENT_D(A_new, i, j) = SM_ELEMENT_D(sm_self, rows[i], cols[j]);
     }
   }
@@ -187,12 +189,14 @@ static DDMatrix DDMatCloneSub_Dense(DDMatrix self,
   return DDMatWrapDense(A_new);
 }
 
-static SUNErrCode DDMatCopySub_Dense(DDMatrix self,
-                                     DDMatrix A,
-                                     sunindextype m,
-                                     const sunindextype rows[static m],
-                                     sunindextype n,
-                                     const sunindextype cols[static n])
+static SUNErrCode DDMatCopySub_Dense(
+  DDMatrix self,
+  DDMatrix A,
+  sunindextype m,
+  const sunindextype rows[static m],
+  sunindextype n,
+  const sunindextype cols[static n]
+)
 {
   SUNMatrix sm_self = DDMatGetSUNMat(self);
   SUNMatrix sm_A    = DDMatGetSUNMat(A);
@@ -206,12 +210,10 @@ static SUNErrCode DDMatCopySub_Dense(DDMatrix self,
 
   for (sunindextype j = 0; j < n; ++j)
   {
-    SUNCheck(cols[j] >= 0 && cols[j] < SM_COLUMNS_D(sm_self),
-             SUN_ERR_ARG_DIMSMISMATCH);
+    SUNCheck(cols[j] >= 0 && cols[j] < SM_COLUMNS_D(sm_self), SUN_ERR_ARG_DIMSMISMATCH);
     for (sunindextype i = 0; i < m; ++i)
     {
-      SUNCheck(rows[i] >= 0 && rows[i] < SM_ROWS_D(sm_self),
-               SUN_ERR_ARG_DIMSMISMATCH);
+      SUNCheck(rows[i] >= 0 && rows[i] < SM_ROWS_D(sm_self), SUN_ERR_ARG_DIMSMISMATCH);
       SM_ELEMENT_D(sm_A, i, j) = SM_ELEMENT_D(sm_self, rows[i], cols[j]);
     }
   }

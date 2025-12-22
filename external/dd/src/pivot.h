@@ -6,6 +6,7 @@
 #include <sundials/sundials_context.h>
 #include <sundials/sundials_types.h>
 
+#include "macros.h"
 #include "matrix.h"
 #include "structure.h"
 
@@ -17,22 +18,38 @@
  * Pivot Memory
  * -------------------------------------------------------------------------- */
 
+DD_DEFINE_PAIR(sunindextype, sunindextype, sunindextype);
+
 typedef struct
 {
-  SUNContext sunctx;        /** Sundials context  */
-  sunindextype DAE_size;    /** DAE size */
-  uint8_t K;                /** Number of stages */
-  uint8_t* spec;            /** Dummy derivative specification */
-  sunindextype NNZ_spec;    /** Number of non-zero entries in `spec` */
-  sunindextype* NZ_spec;    /** Non-zero entries in `spec` */
-  sunindextype N_diff_vars; /** Number of diff equations in first-order DAE */
-  sunindextype* diff_vars;  /** Diff variables in first-order DAE */
-  sunbooleantype** known_k; /** Indicates known variables at each stage */
-  sunindextype** vars_k;    /** Pivoted variables in each stage */
-  DDMatrix* J_k;            /** Jacobian subset for each stage */
-  DDMatrixWorkspace* wss;   /** Workspace for each stage */
-  sunindextype* vars;       /** Varables in all stages  */
-  sunbooleantype* known;    /** Known variables in all stages */
+  SUNContext sunctx; /**< Sundials context  */
+
+  sunindextype DAE_size;    /**< DAE size */
+  sunindextype N_diff_vars; /**< Number of diff equations in first-order DAE */
+  sunindextype* diff_vars;  /**< Diff variables in first-order DAE */
+
+  /** Defines differential variable aliases. That is:
+      `d/dt Y[diff_var_aliases[j].fst] = Y[diff_var_aliases[j].snd]`. */
+  Pair_sunindextype* diff_var_aliases;
+
+  /** `yy_diff_alias_row[i] >= 0` if `diff_var_aliases[j].fst = i` for some j
+      and yy_diff_alias_row[i] is the equation number of this alias equation. */
+  sunindextype* yy_diff_alias_row;
+
+  /** `yp_diff_alias_row[i] >= 0` if `diff_var_aliases[j].snd = i` for some j
+      and yy_diff_alias_row[i] is the equation number of this alias equation. */
+  sunindextype* yp_diff_alias_row;
+
+  uint8_t K;                /**< Number of stages */
+  uint8_t* spec;            /**< Dummy derivative specification */
+  sunindextype NNZ_spec;    /**< Number of non-zero entries in `spec` */
+  sunindextype* NZ_spec;    /**< Non-zero entries in `spec` */
+  sunbooleantype** known_k; /**< Indicates known variables at each stage */
+  sunindextype** vars_k;    /**< Pivoted variables in each stage */
+  DDMatrix* J_k;            /**< Jacobian subset for each stage */
+  DDMatrixWorkspace* wss;   /**< Workspace for each stage */
+  sunindextype* vars;       /**< Variables in all stages  */
+  sunbooleantype* known;    /**< Known variables in all stages */
 } _PivMem;
 
 /** @brief Holds pivoting state */
