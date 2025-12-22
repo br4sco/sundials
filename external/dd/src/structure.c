@@ -4,7 +4,7 @@
 
 #include "structure.h"
 
-void STDestroy(Struc st)
+void STDestroy(DAEStruct st)
 {
   if (st)
   {
@@ -66,13 +66,13 @@ void STDestroy(Struc st)
   }
 }
 
-Struc STCreate(sunindextype N,
+DAEStruct STCreate(sunindextype N,
                const uint8_t eqnofs[static N],
                const uint8_t varofs[static N],
                char** eqn_names,
                char** var_names)
 {
-  Struc st = malloc(sizeof(*st));
+  DAEStruct st = malloc(sizeof(*st));
   if (st == NULL) { return NULL; }
 
   st->DAE_size = N;

@@ -40,8 +40,8 @@ int main(int argc, char* argv[])
   /* Compute DAE structure. */
   char* eqn_names[] = {"f₁", "f₂"};
   char* var_names[] = {"x", "y"};
-  Struc st = STCreate(LOTKA_VOLTERRA_N, LOTKA_VOLTERRA_C, LOTKA_VOLTERRA_D,
-                      eqn_names, var_names);
+  DAEStruct st =
+    STCreate(LOTKA_VOLTERRA_N, LOTKA_VOLTERRA_C, LOTKA_VOLTERRA_D, eqn_names, var_names);
   TEST_ASSERT(st);
 
   const sunindextype N = st->N;
@@ -64,10 +64,11 @@ int main(int argc, char* argv[])
   TEST_ASSERT(YS);
 
   /* Set parameters */
-  LotkaVolterraParams p = {.a = SUN_RCONST(1.5),
-                           .b = SUN_RCONST(1.0),
-                           .c = SUN_RCONST(1.0),
-                           .d = SUN_RCONST(3.0)};
+  LotkaVolterraParams p =
+    {.a = SUN_RCONST(1.5),
+     .b = SUN_RCONST(1.0),
+     .c = SUN_RCONST(1.0),
+     .d = SUN_RCONST(3.0)};
 
   /* Set initial values. */
   sunindextype t0 = SUN_RCONST(0.0);
@@ -89,17 +90,22 @@ int main(int argc, char* argv[])
   DDMem dd_mem = DDCreate(sunctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(DDInit(dd_mem, st, SUN_RCONST(0.0), LotkaVolterraJacf0, dd_J0,
-                     LotkaVolterraRes, t0, Y) == IDA_SUCCESS);
+  TEST_ASSERT(
+    DDInit(dd_mem, st, SUN_RCONST(0.0), LotkaVolterraJacf0, dd_J0, LotkaVolterraRes, t0, Y) ==
+    IDA_SUCCESS
+  );
 
-  TEST_ASSERT(DDSensInit(dd_mem, LOTKA_VOLTERRA_NP, IDA_STAGGERED,
-                         LotkaVolterraResS, YS) == IDA_SUCCESS);
+  TEST_ASSERT(
+    DDSensInit(dd_mem, LOTKA_VOLTERRA_NP, IDA_STAGGERED, LotkaVolterraResS, YS) ==
+    IDA_SUCCESS
+  );
 
   /* Set parameters as user data. */
   TEST_ASSERT(DDSetUserData(dd_mem, &p) == IDA_SUCCESS);
 
-  TEST_ASSERT(DDSSTolerances(dd_mem, SUN_RCONST(1.0e-9), SUN_RCONST(1.0e-9)) ==
-              IDA_SUCCESS);
+  TEST_ASSERT(
+    DDSSTolerances(dd_mem, SUN_RCONST(1.0e-9), SUN_RCONST(1.0e-9)) == IDA_SUCCESS
+  );
 
   /* Setup and set linear solver. */
   SUNMatrix J        = NULL;
@@ -116,8 +122,8 @@ int main(int argc, char* argv[])
     break;
   case CSR:
   case CSC:
-    J = SUNSparseMatrix(N, N, LOTKA_VOLTERRA_JAC_NNZ + 4,
-                        mat_type == CSR ? CSR_MAT : CSC_MAT, sunctx);
+    J =
+      SUNSparseMatrix(N, N, LOTKA_VOLTERRA_JAC_NNZ + 4, mat_type == CSR ? CSR_MAT : CSC_MAT, sunctx);
     TEST_ASSERT(J);
     LS = SUNLinSol_KLU(Y, J, sunctx);
     TEST_ASSERT(LS);
@@ -131,21 +137,21 @@ int main(int argc, char* argv[])
   case NONE: break;
   case DENSE:
     TEST_ASSERT(
-      DDSetJacFn(dd_mem, (DDLsJacFn){.id        = DD_JAC_1,
-                                     .fn.jacfn1 = LotkaVolterraJacfn_Dense}) ==
-      IDA_SUCCESS);
+      DDSetJacFn(dd_mem, (DDLsJacFn){.id = DD_JAC_1, .fn.jacfn1 = LotkaVolterraJacfn_Dense}) ==
+      IDA_SUCCESS
+    );
     break;
   case CSR:
     TEST_ASSERT(
-      DDSetJacFn(dd_mem, (DDLsJacFn){.id        = DD_JAC_1,
-                                     .fn.jacfn1 = LotkaVolterraJacfn_CSR}) ==
-      IDA_SUCCESS);
+      DDSetJacFn(dd_mem, (DDLsJacFn){.id = DD_JAC_1, .fn.jacfn1 = LotkaVolterraJacfn_CSR}) ==
+      IDA_SUCCESS
+    );
     break;
   case CSC:
     TEST_ASSERT(
-      DDSetJacFn(dd_mem, (DDLsJacFn){.id        = DD_JAC_2,
-                                     .fn.jacfn2 = LotkaVolterraJacfn_CSC}) ==
-      IDA_SUCCESS);
+      DDSetJacFn(dd_mem, (DDLsJacFn){.id = DD_JAC_2, .fn.jacfn2 = LotkaVolterraJacfn_CSC}) ==
+      IDA_SUCCESS
+    );
     break;
   }
 
@@ -171,16 +177,27 @@ int main(int argc, char* argv[])
     TEST_ASSERT(pr >= 0);
 
     const sunrealtype x = LV_X(Y, 0), y = LV_Y(Y, 0);
-    const sunrealtype xS[] = {LV_X(YS[0], 0), LV_X(YS[1], 0), LV_X(YS[2], 0),
-                              LV_X(YS[3], 0)},
-                      yS[] = {LV_Y(YS[0], 0), LV_Y(YS[1], 0), LV_Y(YS[2], 0),
-                              LV_Y(YS[3], 0)};
+    const sunrealtype
+      xS[] = {LV_X(YS[0], 0), LV_X(YS[1], 0), LV_X(YS[2], 0), LV_X(YS[3], 0)},
+      yS[] = {LV_Y(YS[0], 0), LV_Y(YS[1], 0), LV_Y(YS[2], 0), LV_Y(YS[3], 0)};
 
-    fprintf(res,
-            "%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%."
-            "20f%d\n",
-            tout, x, y, xS[0], yS[0], xS[1], yS[1], xS[2], yS[2], xS[3], yS[3],
-            pr == PIVOT_SUCCESS ? 1 : 0);
+    fprintf(
+      res,
+      "%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%."
+      "20f%d\n",
+      tout,
+      x,
+      y,
+      xS[0],
+      yS[0],
+      xS[1],
+      yS[1],
+      xS[2],
+      yS[2],
+      xS[3],
+      yS[3],
+      pr == PIVOT_SUCCESS ? 1 : 0
+    );
 
     tout += SUN_RCONST(0.1);
     sr = DDSolve(dd_mem, tout, &tret, Y, IDA_NORMAL);

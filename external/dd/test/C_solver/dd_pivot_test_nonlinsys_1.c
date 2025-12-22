@@ -13,15 +13,15 @@ int main(void)
 {
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
-  Struc st = STCreate(NONLINSYS_N, NONLINSYS_C, NONLINSYS_D, NULL, NULL);
+  DAEStruct st = STCreate(NONLINSYS_N, NONLINSYS_C, NONLINSYS_D, NULL, NULL);
   TEST_ASSERT(st != NULL);
   DDMatrix jac = DDMatWrapDense(jac_nonlinsys_create(1, 1, 1, 1, 1, 1, 1, 1));
   TEST_ASSERT(jac != NULL);
-  PivMem pm = PMCreate(CTX, st, jac);
+  PivMem pm = PIVCreate(CTX, st, jac);
   TEST_ASSERT(pm != NULL);
 
-  TEST_ASSERT(PPivot(st, jac, 0, pm) == SUN_SUCCESS);
-  TEST_ASSERT(PPComputeDDSpec(st, pm) == SUN_SUCCESS);
+  TEST_ASSERT(PIVPivot(st, jac, 0, pm) == SUN_SUCCESS);
+  TEST_ASSERT(PIVComputeDDSpec(st, pm) == SUN_SUCCESS);
 
   size_t k = 0;
   TEST_ASSERT(st->M_k[k] == 0) /* emtpy stage */
@@ -93,7 +93,7 @@ int main(void)
   TEST_ASSERT(NZ_spec[1] == 1);
   TEST_ASSERT(NZ_spec[2] == 4);
 
-  PMDestroy(pm);
+  PIVDestroy(pm);
   STDestroy(st);
   SUNMatDestroy(DDMatGetSUNMat(jac));
   DDMatDestroy(jac);

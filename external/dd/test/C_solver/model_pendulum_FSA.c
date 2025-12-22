@@ -31,8 +31,8 @@ int main(int argc, char* argv[])
   const sunrealtype tout                = SUN_RCONST(100.0);
 
   /* Compute DAE structure. */
-  Struc st = STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, PENDULUM_EQN_NAMES,
-                      PENDULUM_VAR_NAMES);
+  DAEStruct st =
+    STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, PENDULUM_EQN_NAMES, PENDULUM_VAR_NAMES);
   TEST_ASSERT(st);
 
   /* Setup Sundials context. */
@@ -71,17 +71,20 @@ int main(int argc, char* argv[])
   DDMem dd_mem = DDCreate(ctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(DDInit(dd_mem, st, ZERO, PendulumJacf0, dd_J0, PendulumRes, t0,
-                     Y) == IDA_SUCCESS);
+  TEST_ASSERT(
+    DDInit(dd_mem, st, ZERO, PendulumJacf0, dd_J0, PendulumRes, t0, Y) == IDA_SUCCESS
+  );
 
-  TEST_ASSERT(DDSensInit(dd_mem, PENDULUM_NP, IDA_STAGGERED,
-                         analytic_sens_residual ? PendulumResS : NULL,
-                         YS) == IDA_SUCCESS);
+  TEST_ASSERT(
+    DDSensInit(dd_mem, PENDULUM_NP, IDA_STAGGERED, analytic_sens_residual ? PendulumResS : NULL, YS) ==
+    IDA_SUCCESS
+  );
 
   TEST_ASSERT(DDSetUserData(dd_mem, data) == IDA_SUCCESS);
 
-  TEST_ASSERT(DDSSTolerances(dd_mem, SUN_RCONST(1.0e-6), SUN_RCONST(1.0e-7)) ==
-              IDA_SUCCESS);
+  TEST_ASSERT(
+    DDSSTolerances(dd_mem, SUN_RCONST(1.0e-6), SUN_RCONST(1.0e-7)) == IDA_SUCCESS
+  );
 
   TEST_ASSERT(DDSensEEtolerances(dd_mem) == IDA_SUCCESS);
   sunrealtype pbar[] = {data->param[0], data->param[1]};
@@ -99,10 +102,8 @@ int main(int argc, char* argv[])
   TEST_ASSERT(DDSetStopTime(dd_mem, tout) == IDA_SUCCESS);
 
   /* Set up result file */
-  FILE* file = fopen(analytic_sens_residual
-                       ? "pendulum_analytic_sens_residual_FSA.csv"
-                       : "pendulum_FSA.csv",
-                     "w");
+  FILE* file =
+    fopen(analytic_sens_residual ? "pendulum_analytic_sens_residual_FSA.csv" : "pendulum_FSA.csv", "w");
   TEST_ASSERT(file);
 
   /* Solve and output solution. */
@@ -125,11 +126,23 @@ int main(int argc, char* argv[])
     const sunrealtype xg = P_X(YS[1], 0), yg = P_Y(YS[1], 0),
                       lamg = P_LAMBDA(YS[1]);
 
-    fprintf(file,
-            "%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%."
-            "20f,%d\n",
-            t, x, y, lam, xl, yl, laml, xg, yg, lamg, x * x + y * y - l * l,
-            pr == PIVOT_SUCCESS ? 1 : 0);
+    fprintf(
+      file,
+      "%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%."
+      "20f,%d\n",
+      t,
+      x,
+      y,
+      lam,
+      xl,
+      yl,
+      laml,
+      xg,
+      yg,
+      lamg,
+      x * x + y * y - l * l,
+      pr == PIVOT_SUCCESS ? 1 : 0
+    );
 
     t += tstep;
     flag = DDSolve(dd_mem, t, &tret, Y, IDA_NORMAL);

@@ -13,15 +13,15 @@ int main(void)
 {
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
-  Struc st = STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, NULL, NULL);
+  DAEStruct st = STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, NULL, NULL);
   TEST_ASSERT(st != NULL);
   DDMatrix jac = DDMatWrapDense(jac_pendulum_create(0));
   TEST_ASSERT(jac != NULL);
-  PivMem pm = PMCreate(CTX, st, jac);
+  PivMem pm = PIVCreate(CTX, st, jac);
   TEST_ASSERT(pm != NULL);
 
-  TEST_ASSERT(PPivot(st, jac, 0, pm) == SUN_SUCCESS);
-  TEST_ASSERT(PPComputeDDSpec(st, pm) == SUN_SUCCESS);
+  TEST_ASSERT(PIVPivot(st, jac, 0, pm) == SUN_SUCCESS);
+  TEST_ASSERT(PIVComputeDDSpec(st, pm) == SUN_SUCCESS);
 
   size_t k              = 0;
   sunbooleantype* known = pm->known_k[k];
@@ -58,7 +58,7 @@ int main(void)
   TEST_ASSERT(pm->NNZ_spec == 1);
   TEST_ASSERT(pm->NZ_spec[0] == 1);
 
-  PMDestroy(pm);
+  PIVDestroy(pm);
   STDestroy(st);
   DDMatDestroy(jac);
 

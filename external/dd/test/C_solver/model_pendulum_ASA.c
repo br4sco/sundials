@@ -1,5 +1,4 @@
 #include <idas/idas.h>
-#include <math.h>
 #include <nvector/nvector_serial.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -31,8 +30,8 @@ int main(void)
   const int Nd            = 200;
 
   /* Compute DAE structure. */
-  Struc st = STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, PENDULUM_EQN_NAMES,
-                      PENDULUM_VAR_NAMES);
+  DAEStruct st =
+    STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, PENDULUM_EQN_NAMES, PENDULUM_VAR_NAMES);
   TEST_ASSERT(st);
 
   /* Setup Sundials context. */
@@ -70,15 +69,18 @@ int main(void)
   DDMem dd_mem = DDCreate(ctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(DDInit(dd_mem, st, SUN_RCONST(0.0), PendulumJacf0, dd_J0,
-                     PendulumRes, t0, Y) == IDA_SUCCESS);
+  TEST_ASSERT(
+    DDInit(dd_mem, st, SUN_RCONST(0.0), PendulumJacf0, dd_J0, PendulumRes, t0, Y) ==
+    IDA_SUCCESS
+  );
 
   TEST_ASSERT(DDAdjInit(dd_mem, Nd, IDA_POLYNOMIAL) == IDA_SUCCESS);
 
   TEST_ASSERT(DDSetUserData(dd_mem, data) == IDA_SUCCESS);
 
-  TEST_ASSERT(DDSSTolerances(dd_mem, SUN_RCONST(1.0e-9), SUN_RCONST(1.0e-9)) ==
-              IDA_SUCCESS);
+  TEST_ASSERT(
+    DDSSTolerances(dd_mem, SUN_RCONST(1.0e-9), SUN_RCONST(1.0e-9)) == IDA_SUCCESS
+  );
 
   /* Setup and set linear solver. */
   SUNMatrix J = SUNDenseMatrix(st->N, st->N, ctx);
@@ -111,8 +113,7 @@ int main(void)
 
     const sunrealtype x = P_X(Y, 0), y = P_Y(Y, 0), lam = P_LAMBDA(Y);
 
-    fprintf(filef, "%.20f,%.20f,%.20f,%.20f,%.20f,%d\n", t, x, y, lam,
-            x * x + y * y - l * l, pr == PIVOT_SUCCESS ? 1 : 0);
+    fprintf(filef, "%.20f,%.20f,%.20f,%.20f,%.20f,%d\n", t, x, y, lam, x * x + y * y - l * l, pr == PIVOT_SUCCESS ? 1 : 0);
 
     t += tstep;
 
@@ -138,11 +139,12 @@ int main(void)
   int indexB;
   TEST_ASSERT(DDCreateB(dd_mem, &indexB) == IDA_SUCCESS);
 
-  TEST_ASSERT(DDInitB(dd_mem, indexB, PendulumResB, tret, yyB, ypB) ==
-              IDA_SUCCESS);
+  TEST_ASSERT(DDInitB(dd_mem, indexB, PendulumResB, tret, yyB, ypB) == IDA_SUCCESS);
 
-  TEST_ASSERT(DDSStolerancesB(dd_mem, indexB, SUN_RCONST(1.e-6),
-                              SUN_RCONST(1.e-6)) == IDA_SUCCESS);
+  TEST_ASSERT(
+    DDSStolerancesB(dd_mem, indexB, SUN_RCONST(1.e-6), SUN_RCONST(1.e-6)) ==
+    IDA_SUCCESS
+  );
 
   TEST_ASSERT(DDSetUserDataB(dd_mem, indexB, data) == IDA_SUCCESS);
 
@@ -169,8 +171,7 @@ int main(void)
 
   while (SUNTRUE)
   {
-    fprintf(fileb, "%f,%f,%f,%f,%f,%f,%f\n", tret, yyB_arr[0], yyB_arr[2],
-            yyB_arr[4], ypB_arr[0], ypB_arr[2], ypB_arr[4]);
+    fprintf(fileb, "%f,%f,%f,%f,%f,%f,%f\n", tret, yyB_arr[0], yyB_arr[2], yyB_arr[4], ypB_arr[0], ypB_arr[2], ypB_arr[4]);
 
     tret -= tstep;
 

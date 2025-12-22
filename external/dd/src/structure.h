@@ -41,10 +41,10 @@ typedef struct
   sunindextype* vars;         /** Variables in all stages */
   char** eqn_names;           /** Equation names */
   char** var_names;           /** Variable names */
-} _Struc;
+} _DAEStruct;
 
 /** @brief Encodes high-index DAE structure. */
-typedef _Struc* Struc;
+typedef _DAEStruct* DAEStruct;
 
 /* ==========================================================================
  * Macros
@@ -74,13 +74,9 @@ typedef _Struc* Struc;
  * ========================================================================== */
 
 /** @brief Creates DAE structure. */
-Struc STCreate(sunindextype size,
-               const uint8_t[static size],
-               const uint8_t[static size],
-               char**,
-               char**);
+DAEStruct STCreate(sunindextype size, const uint8_t[static size], const uint8_t[static size], char**, char**);
 
 /** @brief Destroys DAE structure. */
-void STDestroy(Struc);
+void STDestroy(DAEStruct);
 
 #endif

@@ -11,7 +11,7 @@ int main(void)
 {
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
-  Struc st = STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, NULL, NULL);
+  DAEStruct st = STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, NULL, NULL);
   TEST_ASSERT(st != NULL);
   STDestroy(st);
   st = NULL;

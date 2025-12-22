@@ -13,16 +13,16 @@ int main(void)
 {
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
-  Struc st = STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, NULL, NULL);
+  DAEStruct st = STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, NULL, NULL);
   TEST_ASSERT(st != NULL);
   DDMatrix jac = DDMatWrapDense(jac_pendulum_create(0));
   TEST_ASSERT(jac != NULL);
 
-  PivMem pm = PMCreate(CTX, st, jac);
+  PivMem pm = PIVCreate(CTX, st, jac);
   TEST_ASSERT(pm != NULL);
-  PMDestroy(pm);
+  PIVDestroy(pm);
   pm = NULL;
-  PMDestroy(pm);
+  PIVDestroy(pm);
 
   STDestroy(st);
   SUNMatDestroy(DDMatGetSUNMat(jac));

@@ -7,7 +7,6 @@
 #include <sunmatrix/sunmatrix_dense.h>
 
 #include "dd.h"
-#include "matrix.h"
 #include "sundials/sundials_nvector.h"
 #include "sundials/sundials_types.h"
 #include "sunmatrix/sunmatrix_sparse.h"
@@ -34,10 +33,11 @@
  * Lotka-Volterra predator-prey model (ODE)
  * -------------------------------------------------------------------------- */
 
-static const sunindextype LOTKA_VOLTERRA_N       = 2;
-static const uint8_t LOTKA_VOLTERRA_C[]          = {0, 0}; /* f₁, f₂ */
-static const uint8_t LOTKA_VOLTERRA_D[]          = {1, 1}; /* x', y' */
-static const sunindextype LOTKA_VOLTERRA_JAC_NNZ = 6;
+static const sunindextype LOTKA_VOLTERRA_DOTMAP[] = {1, -1, 3, -1};
+static const sunindextype LOTKA_VOLTERRA_N        = 2;
+static const uint8_t LOTKA_VOLTERRA_C[]           = {0, 0}; /* f₁, f₂ */
+static const uint8_t LOTKA_VOLTERRA_D[]           = {1, 1}; /* x', y' */
+static const sunindextype LOTKA_VOLTERRA_JAC_NNZ  = 6;
 
 #define LV_X(Y, l) (N_VGetArrayPointer(Y)[l])
 #define LV_Y(Y, l) (N_VGetArrayPointer(Y)[2 + l])
@@ -54,10 +54,12 @@ typedef struct
   sunrealtype d; /* Preadotr death rate. */
 } LotkaVolterraParams;
 
-int LotkaVolterraRes(SUNDIALS_MAYBE_UNUSED sunrealtype t,
-                     N_Vector Y, /* {x, x', y, y'} */
-                     N_Vector R, /* {f₁, f₂, ...} */
-                     void* user_data)
+int LotkaVolterraRes(
+  SUNDIALS_MAYBE_UNUSED sunrealtype t,
+  N_Vector Y, /* {x, x', y, y'} */
+  N_Vector R, /* {f₁, f₂, ...} */
+  void* user_data
+)
 {
   const LotkaVolterraParams p = *((LotkaVolterraParams*)user_data);
   const sunrealtype x = LV_X(Y, 0), dx = LV_X(Y, 1),
@@ -70,16 +72,18 @@ int LotkaVolterraRes(SUNDIALS_MAYBE_UNUSED sunrealtype t,
   return 0;
 }
 
-int LotkaVolterraResS(int Ns,
-                      SUNDIALS_MAYBE_UNUSED sunrealtype t,
-                      N_Vector Y,
-                      SUNDIALS_MAYBE_UNUSED N_Vector R,
-                      N_Vector* YS,
-                      SUNDIALS_MAYBE_UNUSED N_Vector* RS,
-                      void* user_data,
-                      SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
-                      SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
-                      SUNDIALS_MAYBE_UNUSED N_Vector tmp3)
+int LotkaVolterraResS(
+  int Ns,
+  SUNDIALS_MAYBE_UNUSED sunrealtype t,
+  N_Vector Y,
+  SUNDIALS_MAYBE_UNUSED N_Vector R,
+  N_Vector* YS,
+  SUNDIALS_MAYBE_UNUSED N_Vector* RS,
+  void* user_data,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp3
+)
 {
   assert(Ns == LOTKA_VOLTERRA_NP);
 
@@ -106,10 +110,12 @@ int LotkaVolterraResS(int Ns,
   return 0;
 }
 
-int LotkaVolterraJacf0(SUNDIALS_MAYBE_UNUSED sunrealtype t,
-                       SUNDIALS_MAYBE_UNUSED N_Vector Y,
-                       SUNMatrix A,
-                       SUNDIALS_MAYBE_UNUSED void* user_data)
+int LotkaVolterraJacf0(
+  SUNDIALS_MAYBE_UNUSED sunrealtype t,
+  SUNDIALS_MAYBE_UNUSED N_Vector Y,
+  SUNMatrix A,
+  SUNDIALS_MAYBE_UNUSED void* user_data
+)
 {
   SM_ELEMENT_D(A, 0, 0) = ONE;
   SM_ELEMENT_D(A, 1, 1) = ONE;
@@ -117,14 +123,16 @@ int LotkaVolterraJacf0(SUNDIALS_MAYBE_UNUSED sunrealtype t,
   return 0;
 }
 
-int LotkaVolterraJacfn_Dense(SUNDIALS_MAYBE_UNUSED sunrealtype t,
-                             N_Vector Y,
-                             SUNDIALS_MAYBE_UNUSED N_Vector R,
-                             SUNMatrix J,
-                             void* user_data,
-                             SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
-                             SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
-                             SUNDIALS_MAYBE_UNUSED N_Vector tmp3)
+int LotkaVolterraJacfn_Dense(
+  SUNDIALS_MAYBE_UNUSED sunrealtype t,
+  N_Vector Y,
+  SUNDIALS_MAYBE_UNUSED N_Vector R,
+  SUNMatrix J,
+  void* user_data,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp3
+)
 {
   LotkaVolterraParams p = *((LotkaVolterraParams*)user_data);
   const sunrealtype x = LV_X(Y, 0), y = LV_Y(Y, 0);
@@ -146,14 +154,16 @@ int LotkaVolterraJacfn_Dense(SUNDIALS_MAYBE_UNUSED sunrealtype t,
   return 0;
 }
 
-int LotkaVolterraJacfn_CSR(SUNDIALS_MAYBE_UNUSED sunrealtype t,
-                           N_Vector Y,
-                           SUNDIALS_MAYBE_UNUSED N_Vector R,
-                           SUNMatrix J,
-                           void* user_data,
-                           SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
-                           SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
-                           SUNDIALS_MAYBE_UNUSED N_Vector tmp3)
+int LotkaVolterraJacfn_CSR(
+  SUNDIALS_MAYBE_UNUSED sunrealtype t,
+  N_Vector Y,
+  SUNDIALS_MAYBE_UNUSED N_Vector R,
+  SUNMatrix J,
+  void* user_data,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp3
+)
 {
   LotkaVolterraParams p = *((LotkaVolterraParams*)user_data);
   const sunrealtype x = LV_X(Y, 0), y = LV_Y(Y, 0);
@@ -177,16 +187,18 @@ int LotkaVolterraJacfn_CSR(SUNDIALS_MAYBE_UNUSED sunrealtype t,
   return 0;
 }
 
-static inline int LotkaVolterraJacColFn_CSC(sunindextype j,
-                                            SUNDIALS_MAYBE_UNUSED sunrealtype t,
-                                            N_Vector Y,
-                                            SUNDIALS_MAYBE_UNUSED N_Vector R,
-                                            SUNMatrix J,
-                                            sunindextype* nnz,
-                                            void* user_data,
-                                            SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
-                                            SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
-                                            SUNDIALS_MAYBE_UNUSED N_Vector tmp3)
+static inline int LotkaVolterraJacColFn_CSC(
+  sunindextype j,
+  SUNDIALS_MAYBE_UNUSED sunrealtype t,
+  N_Vector Y,
+  SUNDIALS_MAYBE_UNUSED N_Vector R,
+  SUNMatrix J,
+  sunindextype* nnz,
+  void* user_data,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp3
+)
 {
   LotkaVolterraParams p = *((LotkaVolterraParams*)user_data);
   const sunrealtype x = LV_X(Y, 0), y = LV_Y(Y, 0);
@@ -208,33 +220,35 @@ static inline int LotkaVolterraJacColFn_CSC(sunindextype j,
   return 0;
 }
 
-int LotkaVolterraJacfn_CSC(SUNDIALS_MAYBE_UNUSED sunrealtype t,
-                           sunrealtype cj,
-                           N_Vector Y,
-                           SUNDIALS_MAYBE_UNUSED N_Vector R,
-                           SUNMatrix J,
-                           N_Vector id,
-                           void* user_data,
-                           SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
-                           SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
-                           SUNDIALS_MAYBE_UNUSED N_Vector tmp3)
+int LotkaVolterraJacfn_CSC(
+  SUNDIALS_MAYBE_UNUSED sunrealtype t,
+  sunrealtype cj,
+  N_Vector Y,
+  SUNDIALS_MAYBE_UNUSED N_Vector R,
+  SUNMatrix J,
+
+  N_Vector id,
+  void* user_data,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp3
+)
 {
-  return DDJacFn_CSC(2, LOTKA_VOLTERRA_N, LOTKA_VOLTERRA_D,
-                     LotkaVolterraJacColFn_CSC, t, cj, Y, R, J, id, user_data,
-                     tmp1, tmp2, tmp3);
+  return DDJacFn_CSC(2, LOTKA_VOLTERRA_N, LOTKA_VOLTERRA_D, LotkaVolterraJacColFn_CSC, t, cj, Y, R, J, id, user_data, tmp1, tmp2, tmp3);
 }
 
 /* --------------------------------------------------------------------------
  * Pendulum
  * -------------------------------------------------------------------------- */
 
-static char* PENDULUM_EQN_NAMES[]          = {"f₁", "f₂", "f₃"};
-static char* PENDULUM_VAR_NAMES[]          = {"x", "y", "λ"};
-static const sunindextype PENDULUM_N       = 3;
-static const uint8_t PENDULUM_C[]          = {0, 0, 2}; /* f₁, f₂, f₃'' */
-static const uint8_t PENDULUM_D[]          = {2, 2, 0}; /* x'', y'', λ */
-static const sunrealtype PENDULUM_ADJ_ID[] = {ONE, ONE, ONE, ONE, ONE};
-static const sunindextype PENDULUM_JAC_NNZ = 18;
+static const sunindextype PENDULUM_DOTMAP[] = {1, 2, -1, 4, 5, -1, -1};
+static char* PENDULUM_EQN_NAMES[]           = {"f₁", "f₂", "f₃"};
+static char* PENDULUM_VAR_NAMES[]           = {"x", "y", "λ"};
+static const sunindextype PENDULUM_N        = 3;
+static const uint8_t PENDULUM_C[]           = {0, 0, 2}; /* f₁, f₂, f₃'' */
+static const uint8_t PENDULUM_D[]           = {2, 2, 0}; /* x'', y'', λ */
+static const sunrealtype PENDULUM_ADJ_ID[]  = {ONE, ONE, ONE, ONE, ONE};
+static const sunindextype PENDULUM_JAC_NNZ  = 18;
 
 #define P_X(Y, l)   (N_VGetArrayPointer(Y)[l])
 #define P_Y(Y, l)   (N_VGetArrayPointer(Y)[3 + l])
@@ -251,10 +265,12 @@ typedef struct
   sunrealtype param[2]; /* Arm length, Gravitational constant */
 } PendulumData;
 
-int PendulumRes(SUNDIALS_MAYBE_UNUSED sunrealtype t,
-                N_Vector Y, /* {x, x', x'', y, y', y'', λ} */
-                N_Vector R, /* {f₁, f₂, f₃, f₃', f₃'', reserved} */
-                SUNDIALS_MAYBE_UNUSED void* user_data)
+int PendulumRes(
+  SUNDIALS_MAYBE_UNUSED sunrealtype t,
+  N_Vector Y, /* {x, x', x'', y, y', y'', λ} */
+  N_Vector R, /* {f₁, f₂, f₃, f₃', f₃'', reserved} */
+  SUNDIALS_MAYBE_UNUSED void* user_data
+)
 {
   const sunrealtype x = P_X(Y, 0), xp = P_X(Y, 1), xpp = P_X(Y, 2),
                     y = P_Y(Y, 0), yp = P_Y(Y, 1), ypp = P_Y(Y, 2),
@@ -272,14 +288,16 @@ int PendulumRes(SUNDIALS_MAYBE_UNUSED sunrealtype t,
   return 0;
 }
 
-int PendulumJacfn_Dense(SUNDIALS_MAYBE_UNUSED sunrealtype t,
-                        N_Vector Y,
-                        SUNDIALS_MAYBE_UNUSED N_Vector R,
-                        SUNMatrix J,
-                        void* user_data,
-                        SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
-                        SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
-                        SUNDIALS_MAYBE_UNUSED N_Vector tmp3)
+int PendulumJacfn_Dense(
+  SUNDIALS_MAYBE_UNUSED sunrealtype t,
+  N_Vector Y,
+  SUNDIALS_MAYBE_UNUSED N_Vector R,
+  SUNMatrix J,
+  void* user_data,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp3
+)
 {
   const sunrealtype x = P_X(Y, 0), xp = P_X(Y, 1), xpp = P_X(Y, 2),
                     y = P_Y(Y, 0), yp = P_Y(Y, 1), ypp = P_Y(Y, 2),
@@ -323,14 +341,16 @@ int PendulumJacfn_Dense(SUNDIALS_MAYBE_UNUSED sunrealtype t,
   return 0;
 }
 
-int PendulumJacfn_CSR(SUNDIALS_MAYBE_UNUSED sunrealtype t,
-                      N_Vector Y,
-                      SUNDIALS_MAYBE_UNUSED N_Vector R,
-                      SUNMatrix J,
-                      void* user_data,
-                      SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
-                      SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
-                      SUNDIALS_MAYBE_UNUSED N_Vector tmp3)
+int PendulumJacfn_CSR(
+  SUNDIALS_MAYBE_UNUSED sunrealtype t,
+  N_Vector Y,
+  SUNDIALS_MAYBE_UNUSED N_Vector R,
+  SUNMatrix J,
+  void* user_data,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp3
+)
 {
   const sunrealtype x = P_X(Y, 0), xp = P_X(Y, 1), xpp = P_X(Y, 2),
                     y = P_Y(Y, 0), yp = P_Y(Y, 1), ypp = P_Y(Y, 2),
@@ -379,16 +399,18 @@ int PendulumJacfn_CSR(SUNDIALS_MAYBE_UNUSED sunrealtype t,
   return 0;
 }
 
-static inline int PendulumJacColFn_CSC(sunindextype j,
-                                       SUNDIALS_MAYBE_UNUSED sunrealtype t,
-                                       N_Vector Y,
-                                       SUNDIALS_MAYBE_UNUSED N_Vector R,
-                                       SUNMatrix J,
-                                       sunindextype* nnz,
-                                       void* user_data,
-                                       SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
-                                       SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
-                                       SUNDIALS_MAYBE_UNUSED N_Vector tmp3)
+static inline int PendulumJacColFn_CSC(
+  sunindextype j,
+  SUNDIALS_MAYBE_UNUSED sunrealtype t,
+  N_Vector Y,
+  SUNDIALS_MAYBE_UNUSED N_Vector R,
+  SUNMatrix J,
+  sunindextype* nnz,
+  void* user_data,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp3
+)
 {
   const sunrealtype x = P_X(Y, 0), xp = P_X(Y, 1), xpp = P_X(Y, 2),
                     y = P_Y(Y, 0), yp = P_Y(Y, 1), ypp = P_Y(Y, 2),
@@ -436,19 +458,20 @@ static inline int PendulumJacColFn_CSC(sunindextype j,
   return 0;
 }
 
-int PendulumJacfn_CSC(SUNDIALS_MAYBE_UNUSED sunrealtype t,
-                      sunrealtype cj,
-                      N_Vector Y,
-                      N_Vector R,
-                      SUNMatrix J,
-                      N_Vector id,
-                      void* user_data,
-                      SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
-                      SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
-                      SUNDIALS_MAYBE_UNUSED N_Vector tmp3)
+int PendulumJacfn_CSC(
+  SUNDIALS_MAYBE_UNUSED sunrealtype t,
+  sunrealtype cj,
+  N_Vector Y,
+  N_Vector R,
+  SUNMatrix J,
+  N_Vector id,
+  void* user_data,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp3
+)
 {
-  return DDJacFn_CSC(5, PENDULUM_N, PENDULUM_D, PendulumJacColFn_CSC, t, cj, Y,
-                     R, J, id, user_data, tmp1, tmp2, tmp3);
+  return DDJacFn_CSC(5, PENDULUM_N, PENDULUM_D, PendulumJacColFn_CSC, t, cj, Y, R, J, id, user_data, tmp1, tmp2, tmp3);
 }
 
 void PendulumY0(PendulumData* data, sunrealtype theta0, N_Vector Y)
@@ -473,16 +496,18 @@ void PendulumYS0(PendulumData* data, sunrealtype theta0, N_Vector* YS)
   P_LAMBDA(YS[1]) = m * cos(theta0);
 }
 
-int PendulumResS(int Ns,
-                 SUNDIALS_MAYBE_UNUSED sunrealtype t,
-                 N_Vector Y,
-                 SUNDIALS_MAYBE_UNUSED N_Vector R,
-                 N_Vector* YS,
-                 N_Vector* RS,
-                 void* user_data,
-                 SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
-                 SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
-                 SUNDIALS_MAYBE_UNUSED N_Vector tmp3)
+int PendulumResS(
+  int Ns,
+  SUNDIALS_MAYBE_UNUSED sunrealtype t,
+  N_Vector Y,
+  SUNDIALS_MAYBE_UNUSED N_Vector R,
+  N_Vector* YS,
+  N_Vector* RS,
+  void* user_data,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
+  SUNDIALS_MAYBE_UNUSED N_Vector tmp3
+)
 {
   assert(Ns == PENDULUM_NP);
   assert(user_data);
@@ -519,10 +544,12 @@ int PendulumResS(int Ns,
   return 0;
 }
 
-void PendulumYyBT(SUNDIALS_MAYBE_UNUSED PendulumData* data,
-                  SUNDIALS_MAYBE_UNUSED N_Vector Y,
-                  N_Vector yyBT,
-                  N_Vector ypBT)
+void PendulumYyBT(
+  SUNDIALS_MAYBE_UNUSED PendulumData* data,
+  SUNDIALS_MAYBE_UNUSED N_Vector Y,
+  N_Vector yyBT,
+  N_Vector ypBT
+)
 {
   N_VConst(ZERO, yyBT);
   N_VConst(ZERO, ypBT);
@@ -531,9 +558,7 @@ void PendulumYyBT(SUNDIALS_MAYBE_UNUSED PendulumData* data,
   ypBT_arr[4] = ONE;
 }
 
-sunrealtype PendulumG(SUNDIALS_MAYBE_UNUSED sunrealtype t,
-                      N_Vector Y,
-                      void* user_data)
+sunrealtype PendulumG(SUNDIALS_MAYBE_UNUSED sunrealtype t, N_Vector Y, void* user_data)
 {
   assert(user_data);
   PendulumData* data = (PendulumData*)user_data;
@@ -541,12 +566,14 @@ sunrealtype PendulumG(SUNDIALS_MAYBE_UNUSED sunrealtype t,
   return P_X(Y, 0) + l;
 }
 
-int PendulumResB(SUNDIALS_MAYBE_UNUSED sunrealtype t,
-                 N_Vector Y,
-                 N_Vector yyB,
-                 N_Vector ypB,
-                 N_Vector rrB,
-                 void* user_data)
+int PendulumResB(
+  SUNDIALS_MAYBE_UNUSED sunrealtype t,
+  N_Vector Y,
+  N_Vector yyB,
+  N_Vector ypB,
+  N_Vector rrB,
+  void* user_data
+)
 {
   assert(user_data);
   PendulumData* data = (PendulumData*)user_data;
@@ -578,10 +605,12 @@ int PendulumResB(SUNDIALS_MAYBE_UNUSED sunrealtype t,
   return 0;
 }
 
-int PendulumJacf0(SUNDIALS_MAYBE_UNUSED sunrealtype t,
-                  N_Vector Y,
-                  SUNMatrix A,
-                  SUNDIALS_MAYBE_UNUSED void* user_data)
+int PendulumJacf0(
+  SUNDIALS_MAYBE_UNUSED sunrealtype t,
+  N_Vector Y,
+  SUNMatrix A,
+  SUNDIALS_MAYBE_UNUSED void* user_data
+)
 {
   PendulumData* data = (PendulumData*)user_data;
   sunrealtype m = data->m, l = data->param[0];

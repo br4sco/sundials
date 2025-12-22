@@ -66,9 +66,11 @@ static void DDckpntDestroy(DDckpntMem* ck_mem_ptr)
   }
 }
 
-static DDckpntMem DDckpntCreate(sunrealtype t,
-                                sunindextype speclen,
-                                const uint8_t spec[static speclen])
+static DDckpntMem DDckpntCreate(
+  sunrealtype t,
+  sunindextype speclen,
+  const uint8_t spec[static speclen]
+)
 {
   DDckpntMem ck_mem = malloc(sizeof(*ck_mem));
   if (ck_mem == NULL) { return NULL; }
@@ -123,7 +125,7 @@ struct DDMemRec
 
   /* DAE Structure and Pivoting */
 
-  Struc dd_st;
+  DAEStruct dd_st;
   PivMem dd_pm;
   sunrealtype dd_pivot_tol;
   uint8_t* dd_prev_spec;
@@ -166,63 +168,65 @@ struct DDMemRec
 
 static int DDResWrapper(sunrealtype, N_Vector, N_Vector, N_Vector, void*);
 
-static int DDLsJacFnWrapper1_Dense(sunrealtype,
-                                   sunrealtype,
-                                   N_Vector,
-                                   N_Vector,
-                                   N_Vector,
-                                   SUNMatrix,
-                                   void*,
-                                   N_Vector,
-                                   N_Vector,
-                                   N_Vector);
+static int DDLsJacFnWrapper1_Dense(
+  sunrealtype,
+  sunrealtype,
+  N_Vector,
+  N_Vector,
+  N_Vector,
+  SUNMatrix,
+  void*,
+  N_Vector,
+  N_Vector,
+  N_Vector
+);
 
-static int DDLsJacFnWrapper1_CSR(sunrealtype,
-                                 sunrealtype,
-                                 N_Vector,
-                                 N_Vector,
-                                 N_Vector,
-                                 SUNMatrix,
-                                 void*,
-                                 N_Vector,
-                                 N_Vector,
-                                 N_Vector);
+static int DDLsJacFnWrapper1_CSR(
+  sunrealtype,
+  sunrealtype,
+  N_Vector,
+  N_Vector,
+  N_Vector,
+  SUNMatrix,
+  void*,
+  N_Vector,
+  N_Vector,
+  N_Vector
+);
 
-static int DDLsJacFnWrapper2(sunrealtype,
-                             sunrealtype,
-                             N_Vector,
-                             N_Vector,
-                             N_Vector,
-                             SUNMatrix,
-                             void*,
-                             N_Vector,
-                             N_Vector,
-                             N_Vector);
+static int DDLsJacFnWrapper2(
+  sunrealtype,
+  sunrealtype,
+  N_Vector,
+  N_Vector,
+  N_Vector,
+  SUNMatrix,
+  void*,
+  N_Vector,
+  N_Vector,
+  N_Vector
+);
 
-static int DDResSWrapper(int Ns,
-                         sunrealtype,
-                         N_Vector,
-                         N_Vector,
-                         N_Vector,
-                         N_Vector[static Ns],
-                         N_Vector[static Ns],
-                         N_Vector[static Ns],
-                         void*,
-                         N_Vector,
-                         N_Vector,
-                         N_Vector);
+static int DDResSWrapper(
+  int Ns,
+  sunrealtype,
+  N_Vector,
+  N_Vector,
+  N_Vector,
+  N_Vector[static Ns],
+  N_Vector[static Ns],
+  N_Vector[static Ns],
+  void*,
+  N_Vector,
+  N_Vector,
+  N_Vector
+);
 
-static int DDResBWrapper(sunrealtype,
-                         N_Vector,
-                         N_Vector,
-                         N_Vector,
-                         N_Vector,
-                         N_Vector,
-                         void*);
+static int DDResBWrapper(sunrealtype, N_Vector, N_Vector, N_Vector, N_Vector, N_Vector, void*);
 
 static void DDSetYpFromY(PivMem, N_Vector, N_Vector);
 
-static void DDSetId(Struc, PivMem, N_Vector);
+static void DDSetId(DAEStruct, PivMem, N_Vector);
 
 static void DDAdjCleanup(DDMem dd_mem);
 
@@ -374,7 +378,7 @@ void DDFree(DDMem* dd_mem_ptr)
 
   if (dd_mem->dd_pm != NULL)
   {
-    PMDestroy(dd_mem->dd_pm);
+    PIVDestroy(dd_mem->dd_pm);
     dd_mem->dd_pm = NULL;
   }
 
@@ -417,14 +421,16 @@ void DDFree(DDMem* dd_mem_ptr)
  * DDInit
  * -------------------------------------------------------------------------- */
 
-int DDInit(DDMem dd_mem,
-           Struc st,
-           sunrealtype ptol,
-           DDJacFn0 jacf0,
-           DDMatrix J0,
-           DDResFn res,
-           sunrealtype t0,
-           N_Vector Y0)
+int DDInit(
+  DDMem dd_mem,
+  DAEStruct st,
+  sunrealtype ptol,
+  DDJacFn0 jacf0,
+  DDMatrix J0,
+  DDResFn res,
+  sunrealtype t0,
+  N_Vector Y0
+)
 {
   if (dd_mem == NULL)
   {
@@ -452,7 +458,7 @@ int DDInit(DDMem dd_mem,
   dd_mem->dd_pivot_tol = ptol;
   dd_mem->dd_t0        = t0;
 
-  PivMem pm = PMCreate(sunctx, st, J0);
+  PivMem pm = PIVCreate(sunctx, st, J0);
   if (pm == NULL)
   {
     DDHandleErr(SUN_ERR_MEM_FAIL);
@@ -472,7 +478,7 @@ int DDInit(DDMem dd_mem,
   dd_mem->dd_J0    = J0;
   dd_mem->dd_res   = res;
 
-  if ((PPivot(st, J0, ptol, pm) < 0) || (PPComputeDDSpec(st, pm) < 0))
+  if ((PIVPivot(st, J0, ptol, pm) < 0) || (PIVComputeDDSpec(st, pm) < 0))
   {
     DDHandleErr(SUN_ERR_OP_FAIL);
     return SUN_ERR_OP_FAIL;
@@ -513,11 +519,7 @@ int DDInit(DDMem dd_mem,
   return DD_SUCCESS;
 }
 
-static int DDResWrapper(sunrealtype t,
-                        N_Vector yy,
-                        N_Vector yp,
-                        N_Vector rr,
-                        void* user_data)
+static int DDResWrapper(sunrealtype t, N_Vector yy, N_Vector yp, N_Vector rr, void* user_data)
 {
   const DDMem dd_mem = (DDMem)user_data;
   const PivMem pm    = dd_mem->dd_pm;
@@ -559,7 +561,7 @@ static void DDSetYpFromY(PivMem pm, N_Vector yy, N_Vector yp)
   }
 }
 
-static void DDSetId(Struc st, PivMem pm, N_Vector id)
+static void DDSetId(DAEStruct st, PivMem pm, N_Vector id)
 {
   N_VConst(ZERO, id);
   sunrealtype* id_arr = N_VGetArrayPointer(id);
@@ -600,11 +602,13 @@ int DDReInit(DDMem dd_mem, sunrealtype t0, N_Vector Y0)
  * DDSolve
  * -------------------------------------------------------------------------- */
 
-int DDSolve(DDMem dd_mem,
-            sunrealtype tout,
-            sunrealtype tret[static 1],
-            N_Vector Y,
-            int itask)
+int DDSolve(
+  DDMem dd_mem,
+  sunrealtype tout,
+  sunrealtype tret[static 1],
+  N_Vector Y,
+  int itask
+)
 {
   if (dd_mem == NULL)
   {
@@ -644,8 +648,8 @@ PivotResult DDPivot(DDMem dd_mem)
 
   SUNFunctionBegin(dd_mem->sunctx);
 
-  Struc st  = dd_mem->dd_st;
-  PivMem pm = dd_mem->dd_pm;
+  DAEStruct st = dd_mem->dd_st;
+  PivMem pm    = dd_mem->dd_pm;
 
   memcpy(dd_mem->dd_prev_spec, pm->spec, st->DAE_size * sizeof(*pm->spec));
 
@@ -668,13 +672,13 @@ PivotResult DDPivot(DDMem dd_mem)
     return PIVOT_FAIL;
   }
 
-  if (PPivot(st, J0, dd_mem->dd_pivot_tol, pm) < 0)
+  if (PIVPivot(st, J0, dd_mem->dd_pivot_tol, pm) < 0)
   {
     DDHandleErr(SUN_ERR_OP_FAIL);
     return PIVOT_FAIL;
   }
 
-  if (PPComputeDDSpec(st, pm) < 0)
+  if (PIVComputeDDSpec(st, pm) < 0)
   {
     DDHandleErr(SUN_ERR_OP_FAIL);
     return PIVOT_FAIL;
@@ -814,11 +818,7 @@ void DDSensFree(DDMem dd_mem)
  * DDSensInit
  * -------------------------------------------------------------------------- */
 
-int DDSensInit(DDMem dd_mem,
-               int Ns,
-               int ism,
-               DDSensResFn resfnS,
-               N_Vector YS0[static Ns])
+int DDSensInit(DDMem dd_mem, int Ns, int ism, DDSensResFn resfnS, N_Vector YS0[static Ns])
 {
   if (dd_mem == NULL)
   {
@@ -858,8 +858,8 @@ int DDSensInit(DDMem dd_mem,
 
   for (int i = 0; i < Ns; ++i) { DDSetYpFromY(dd_mem->dd_pm, YS0[i], ypS[i]); }
 
-  if (IDASensInit(dd_mem->ida_mem, Ns, ism, resfnS ? DDResSWrapper : NULL, YS0,
-                  ypS) < 0)
+  if (IDASensInit(dd_mem->ida_mem, Ns, ism, resfnS ? DDResSWrapper : NULL, YS0, ypS) <
+      0)
   {
     DDHandleErr(DD_ERR_IDA_ERR);
     return DD_ERR_IDA_ERR;
@@ -870,18 +870,20 @@ int DDSensInit(DDMem dd_mem,
   return DD_SUCCESS;
 }
 
-static int DDResSWrapper(int Ns,
-                         sunrealtype t,
-                         N_Vector yy,
-                         SUNDIALS_MAYBE_UNUSED N_Vector yp,
-                         N_Vector rr,
-                         N_Vector yyS[static Ns],
-                         N_Vector ypS[static Ns],
-                         N_Vector rrS[static Ns],
-                         void* user_data,
-                         N_Vector tmp1,
-                         N_Vector tmp2,
-                         N_Vector tmp3)
+static int DDResSWrapper(
+  int Ns,
+  sunrealtype t,
+  N_Vector yy,
+  SUNDIALS_MAYBE_UNUSED N_Vector yp,
+  N_Vector rr,
+  N_Vector yyS[static Ns],
+  N_Vector ypS[static Ns],
+  N_Vector rrS[static Ns],
+  void* user_data,
+  N_Vector tmp1,
+  N_Vector tmp2,
+  N_Vector tmp3
+)
 {
   const DDMem dd_mem = (DDMem)user_data;
 
@@ -909,8 +911,8 @@ static int DDResSWrapper(int Ns,
 
   /* Evaluate user supplied sensitivity residual function. */
 
-  const int flag = dd_mem->dd_resS(Ns, t, yy, rr, yyS, rrS,
-                                   dd_mem->dd_user_data, tmp1, tmp2, tmp3);
+  const int flag =
+    dd_mem->dd_resS(Ns, t, yy, rr, yyS, rrS, dd_mem->dd_user_data, tmp1, tmp2, tmp3);
 
   return flag;
 }
@@ -956,12 +958,14 @@ int DDSensReInit(DDMem dd_mem, int ism, N_Vector* YS0)
  * DDSolveF
  * -------------------------------------------------------------------------- */
 
-int DDSolveF(DDMem dd_mem,
-             sunrealtype tout,
-             sunrealtype tret[static 1],
-             N_Vector Y,
-             int itask,
-             int ncheck[static 1])
+int DDSolveF(
+  DDMem dd_mem,
+  sunrealtype tout,
+  sunrealtype tret[static 1],
+  N_Vector Y,
+  int itask,
+  int ncheck[static 1]
+)
 {
   if (dd_mem == NULL)
   {
@@ -1166,12 +1170,14 @@ int DDCreateB(DDMem dd_mem, int which[static 1])
  * DDInitB
  * -------------------------------------------------------------------------- */
 
-int DDInitB(DDMem dd_mem,
-            int which,
-            DDResFnB resB,
-            sunrealtype tB0,
-            N_Vector yyB0,
-            N_Vector ypB0)
+int DDInitB(
+  DDMem dd_mem,
+  int which,
+  DDResFnB resB,
+  sunrealtype tB0,
+  N_Vector yyB0,
+  N_Vector ypB0
+)
 {
   if (dd_mem == NULL)
   {
@@ -1255,13 +1261,15 @@ int DDInitB(DDMem dd_mem,
   return DD_SUCCESS;
 }
 
-static int DDResBWrapper(sunrealtype t,
-                         N_Vector yy,
-                         SUNDIALS_MAYBE_UNUSED N_Vector yp,
-                         N_Vector yyB,
-                         N_Vector ypB,
-                         N_Vector rrB,
-                         void* user_dataB)
+static int DDResBWrapper(
+  sunrealtype t,
+  N_Vector yy,
+  SUNDIALS_MAYBE_UNUSED N_Vector yp,
+  N_Vector yyB,
+  N_Vector ypB,
+  N_Vector rrB,
+  void* user_dataB
+)
 {
   DataB* data = (DataB*)user_dataB;
 
@@ -1348,7 +1356,7 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
 
     if (ck_mem != dd_mem->ck_mem_cur)
     {
-      if (PPUpdateDDSpec(dd_mem->dd_st, ck_mem->ck_spec, dd_mem->dd_pm) < 0)
+      if (PIVUpdateDDSpec(dd_mem->dd_st, ck_mem->ck_spec, dd_mem->dd_pm) < 0)
       {
         DDHandleErr(SUN_ERR_OP_FAIL);
         return SUN_ERR_OP_FAIL;
@@ -1429,8 +1437,13 @@ int DDCalcICB(DDMem dd_mem, int which, sunrealtype tBout1, N_Vector Y)
     return SUN_ERR_ARG_CORRUPT;
   }
 
-  if (IDACalcICB(dd_mem->ida_mem, which, tBout1, Y,
-                 /* Not used by the residual function. */ Y) < 0)
+  if (IDACalcICB(
+        dd_mem->ida_mem,
+        which,
+        tBout1,
+        Y,
+        /* Not used by the residual function. */ Y
+      ) < 0)
   {
     DDHandleErr(DD_ERR_IDA_ERR);
     return DD_ERR_IDA_ERR;
@@ -1510,16 +1523,18 @@ int DDSetJacFn(DDMem dd_mem, DDLsJacFn jacfn)
   return DD_SUCCESS;
 }
 
-static int DDLsJacFnWrapper1_Dense(sunrealtype t,
-                                   sunrealtype cj,
-                                   N_Vector yy,
-                                   SUNDIALS_MAYBE_UNUSED N_Vector yp,
-                                   N_Vector rr,
-                                   SUNMatrix J,
-                                   void* user_data,
-                                   N_Vector tmp1,
-                                   N_Vector tmp2,
-                                   N_Vector tmp3)
+static int DDLsJacFnWrapper1_Dense(
+  sunrealtype t,
+  sunrealtype cj,
+  N_Vector yy,
+  SUNDIALS_MAYBE_UNUSED N_Vector yp,
+  N_Vector rr,
+  SUNMatrix J,
+  void* user_data,
+  N_Vector tmp1,
+  N_Vector tmp2,
+  N_Vector tmp3
+)
 {
   const DDMem dd_mem = (DDMem)user_data;
   const PivMem pm    = dd_mem->dd_pm;
@@ -1546,16 +1561,18 @@ static int DDLsJacFnWrapper1_Dense(sunrealtype t,
   return flag;
 }
 
-static int DDLsJacFnWrapper1_CSR(sunrealtype t,
-                                 sunrealtype cj,
-                                 N_Vector yy,
-                                 SUNDIALS_MAYBE_UNUSED N_Vector yp,
-                                 N_Vector rr,
-                                 SUNMatrix J,
-                                 void* user_data,
-                                 N_Vector tmp1,
-                                 N_Vector tmp2,
-                                 N_Vector tmp3)
+static int DDLsJacFnWrapper1_CSR(
+  sunrealtype t,
+  sunrealtype cj,
+  N_Vector yy,
+  SUNDIALS_MAYBE_UNUSED N_Vector yp,
+  N_Vector rr,
+  SUNMatrix J,
+  void* user_data,
+  N_Vector tmp1,
+  N_Vector tmp2,
+  N_Vector tmp3
+)
 {
   const DDMem dd_mem = (DDMem)user_data;
   const PivMem pm    = dd_mem->dd_pm;
@@ -1592,24 +1609,26 @@ static int DDLsJacFnWrapper1_CSR(sunrealtype t,
   return flag;
 }
 
-static int DDLsJacFnWrapper2(sunrealtype t,
-                             sunrealtype cj,
-                             N_Vector yy,
-                             SUNDIALS_MAYBE_UNUSED N_Vector yp,
-                             N_Vector rr,
-                             SUNMatrix J,
-                             void* user_data,
-                             N_Vector tmp1,
-                             N_Vector tmp2,
-                             N_Vector tmp3)
+static int DDLsJacFnWrapper2(
+  sunrealtype t,
+  sunrealtype cj,
+  N_Vector yy,
+  SUNDIALS_MAYBE_UNUSED N_Vector yp,
+  N_Vector rr,
+  SUNMatrix J,
+  void* user_data,
+  N_Vector tmp1,
+  N_Vector tmp2,
+  N_Vector tmp3
+)
 {
   const DDMem dd_mem = (DDMem)user_data;
 
   /* Call user supplied Jacobian callback function. */
 
   void* ud = dd_mem->dd_user_data;
-  int flag = dd_mem->dd_jacfn2(t, cj, yy, rr, J, dd_mem->dd_id, ud, tmp1, tmp2,
-                               tmp3);
+  int flag =
+    dd_mem->dd_jacfn2(t, cj, yy, rr, J, dd_mem->dd_id, ud, tmp1, tmp2, tmp3);
 
   return flag;
 }
@@ -1948,11 +1967,7 @@ int DDSetIdB(DDMem dd_mem, int which, N_Vector idB)
   return DD_SUCCESS;
 }
 
-int DDGetB(DDMem dd_mem,
-           int which,
-           sunrealtype tret[static 1],
-           N_Vector yyB,
-           N_Vector ypB)
+int DDGetB(DDMem dd_mem, int which, sunrealtype tret[static 1], N_Vector yyB, N_Vector ypB)
 {
   if (dd_mem == NULL)
   {

@@ -12,7 +12,7 @@ int main(void)
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
   sunindextype i, j, k;
-  Struc st = STCreate(LOTKA_VOLTERRA_N, LOTKA_VOLTERRA_C, LOTKA_VOLTERRA_D,
+  DAEStruct st = STCreate(LOTKA_VOLTERRA_N, LOTKA_VOLTERRA_C, LOTKA_VOLTERRA_D,
                       NULL, NULL);
   TEST_ASSERT(st != NULL);
 

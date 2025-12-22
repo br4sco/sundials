@@ -10,7 +10,7 @@
 #include "structure.h"
 #include "sundials/sundials_errors.h"
 
-PivMem PMCreate(SUNContext sunctx, Struc st, DDMatrix A)
+PivMem PIVCreate(SUNContext sunctx, DAEStruct st, DDMatrix A)
 {
   SUNFunctionBegin(sunctx);
 
@@ -88,7 +88,7 @@ PivMem PMCreate(SUNContext sunctx, Struc st, DDMatrix A)
   return pm;
 }
 
-void PMDestroy(PivMem pm)
+void PIVDestroy(PivMem pm)
 {
   if (pm == NULL) { return; }
 
@@ -179,7 +179,7 @@ static SUNErrCode PDReset(PivMem pm)
   return SUN_SUCCESS;
 }
 
-SUNErrCode PPivot(Struc st, DDMatrix A, sunrealtype tol, PivMem pm)
+SUNErrCode PIVPivot(DAEStruct st, DDMatrix A, sunrealtype tol, PivMem pm)
 {
   SUNFunctionBegin(pm->sunctx);
 
@@ -259,7 +259,7 @@ static sunindextype ComputeNZSpec(sunindextype N,
   return len;
 }
 
-static SUNErrCode ComputeDiffVars(Struc st, PivMem pm)
+static SUNErrCode ComputeDiffVars(DAEStruct st, PivMem pm)
 {
   SUNFunctionBegin(pm->sunctx);
 
@@ -279,7 +279,7 @@ static SUNErrCode ComputeDiffVars(Struc st, PivMem pm)
   return SUN_SUCCESS;
 }
 
-SUNErrCode PPComputeDDSpec(Struc st, PivMem pm)
+SUNErrCode PIVComputeDDSpec(DAEStruct st, PivMem pm)
 {
   SUNFunctionBegin(pm->sunctx);
 
@@ -302,7 +302,7 @@ SUNErrCode PPComputeDDSpec(Struc st, PivMem pm)
   return SUN_SUCCESS;
 }
 
-SUNErrCode PPUpdateDDSpec(Struc st, const uint8_t spec[static 1], PivMem pm)
+SUNErrCode PIVUpdateDDSpec(DAEStruct st, const uint8_t spec[static 1], PivMem pm)
 {
   SUNFunctionBegin(pm->sunctx);
 

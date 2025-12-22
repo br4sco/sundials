@@ -39,10 +39,10 @@ typedef struct
 typedef _PivMem* PivMem;
 
 /** @brief Creates pivot data based on DAE structure. */
-PivMem PMCreate(SUNContext, Struc, DDMatrix);
+PivMem PIVCreate(SUNContext, DAEStruct, DDMatrix);
 
 /** @brief Destroys pivot data. */
-void PMDestroy(PivMem);
+void PIVDestroy(PivMem);
 
 /* /\** @brief Prints sub-matrix at the the given stage *\/ */
 /* void PSPrintSubmat(const Structure[static 1], const PivMem[static 1], uint8_t, */
@@ -53,12 +53,12 @@ void PMDestroy(PivMem);
  * -------------------------------------------------------------------------- */
 
 /** @brief Pivots a DAE given its structure and Jacobian. */
-SUNErrCode PPivot(Struc, DDMatrix, sunrealtype, PivMem);
+SUNErrCode PIVPivot(DAEStruct, DDMatrix, sunrealtype, PivMem);
 
 /** @brief Computes a DD spec from a pivoted DAE. */
-SUNErrCode PPComputeDDSpec(Struc, PivMem);
+SUNErrCode PIVComputeDDSpec(DAEStruct, PivMem);
 
 /** @brief Update the DD spec. **/
-SUNErrCode PPUpdateDDSpec(Struc, const uint8_t[static 1], PivMem);
+SUNErrCode PIVUpdateDDSpec(DAEStruct, const uint8_t[static 1], PivMem);
 
 #endif

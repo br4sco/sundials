@@ -148,6 +148,6 @@ DDMatrix DDMatWrapDense(SUNMatrix);
 DDMatrix DDMatWrapSparse(SUNMatrix);
 
 /** @brief Creates a sparse matrix based on additional structural information. */
-SUNMatrix DDSparseSUNMatFromStructure(const Struc*, sunindextype, int, SUNContext);
+SUNMatrix DDSparseSUNMatFromStructure(const DAEStruct*, sunindextype, int, SUNContext);
 
 #endif

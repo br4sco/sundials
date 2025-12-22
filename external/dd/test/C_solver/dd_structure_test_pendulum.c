@@ -12,7 +12,7 @@ int main(void)
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
   sunindextype i, j, k;
-  Struc st = STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, NULL, NULL);
+  DAEStruct st = STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, NULL, NULL);
   TEST_ASSERT(st != NULL);
 
   TEST_ASSERT(st->DAE_size == 3);
