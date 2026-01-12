@@ -77,6 +77,8 @@ SUNErrCode DDMatPivot_Dense(
   sunindextype colpivots[static n]
 )
 {
+  /* This implementation is an adaptation of https://github.com/OpenModelica/OpenModelica/blob/01a863cff43e0aadcf5931234ca3619bbb458f38/OMCompiler/SimulationRuntime/cpp/Core/Math/Functions.cpp#L100 */
+
   SUNMatrix sm_self = DDMatGetSUNMat(self);
   SUNFunctionBegin(sm_self->sunctx);
 
@@ -97,8 +99,8 @@ SUNErrCode DDMatPivot_Dense(
     /* Get current pivot value. */
     const sunrealtype pivotabsval = SUNRabs(SM_ELEMENT_D(sm_self, r[k], c[k]));
 
-    /* Find the maximum value in the part of the matrix which we have
-           not yet considered. */
+    /* Find the maximum value in the part of the matrix which we have not yet
+       considered. */
     sunindextype max_i     = -1;
     sunindextype max_j     = -1;
     sunrealtype max_absval = SUNRabs(tol);
@@ -119,8 +121,8 @@ SUNErrCode DDMatPivot_Dense(
     /* The matrix is singular. */
     SUNCheck(max_i != -1 && max_j != -1, SUN_ERR_OP_FAIL);
 
-    /* Swap rows and columns so that the current maximum value (up to a
-           factor) always appears in the pivot position. */
+    /* Swap rows and columns so that the current maximum value (up to a factor)
+       always appears in the pivot position. */
     if (max_absval > DD_PIVOT_SCALE * pivotabsval)
     {
       sunindextype tmp = r[k];
@@ -131,13 +133,11 @@ SUNErrCode DDMatPivot_Dense(
       c[max_j]         = tmp;
     }
 
-    /* Get the signed, non-zero, pivot value after any potential
-         * swapping. */
+    /* Get the signed, non-zero, pivot value after any potential swapping. */
     const sunrealtype pivotval = SM_ELEMENT_D(sm_self, r[k], c[k]);
     SUNAssert(SUNRabs(pivotval) >= tol, SUN_ERR_OP_FAIL);
 
-    /* Perform one step of Gaussian elimination on the remaining rows.
-         */
+    /* Perform one step of Gaussian elimination on the remaining rows. */
     for (sunindextype i = k + 1; i < m; ++i)
     {
       const sunrealtype leadval = SM_ELEMENT_D(sm_self, r[i], c[k]);
