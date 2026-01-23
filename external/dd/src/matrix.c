@@ -192,10 +192,8 @@ static DDMatrix DDMatCloneSub_Dense(
 static SUNErrCode DDMatCopySub_Dense(
   DDMatrix self,
   DDMatrix A,
-  sunindextype m,
-  const sunindextype rows[static m],
-  sunindextype n,
-  const sunindextype cols[static n]
+  const sunindextype* rows,
+  const sunindextype* cols
 )
 {
   SUNMatrix sm_self = DDMatGetSUNMat(self);
@@ -205,13 +203,13 @@ static SUNErrCode DDMatCopySub_Dense(
   SUNAssert(SUNMatGetID(sm_self) == SUNMATRIX_DENSE, SUN_ERR_ARG_WRONGTYPE);
   SUNAssert(SUNMatGetID(sm_A) == SUNMATRIX_DENSE, SUN_ERR_ARG_WRONGTYPE);
 
-  SUNCheck(0 <= m && m <= SM_ROWS_D(sm_A), SUN_ERR_ARG_OUTOFRANGE);
-  SUNCheck(0 <= n && n <= SM_COLUMNS_D(sm_A), SUN_ERR_ARG_OUTOFRANGE);
+  const sunindextype M = SM_ROWS_D(sm_A);
+  const sunindextype N = SM_COLUMNS_D(sm_A);
 
-  for (sunindextype j = 0; j < n; ++j)
+  for (sunindextype j = 0; j < N; ++j)
   {
     SUNCheck(cols[j] >= 0 && cols[j] < SM_COLUMNS_D(sm_self), SUN_ERR_ARG_DIMSMISMATCH);
-    for (sunindextype i = 0; i < m; ++i)
+    for (sunindextype i = 0; i < M; ++i)
     {
       SUNCheck(rows[i] >= 0 && rows[i] < SM_ROWS_D(sm_self), SUN_ERR_ARG_DIMSMISMATCH);
       SM_ELEMENT_D(sm_A, i, j) = SM_ELEMENT_D(sm_self, rows[i], cols[j]);

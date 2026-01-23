@@ -38,8 +38,8 @@ int main(int argc, char* argv[])
   }
 
   /* Compute DAE structure. */
-  char* eqn_names[] = {"f₁", "f₂"};
-  char* var_names[] = {"x", "y"};
+  const char* eqn_names[] = {"f₁", "f₂"};
+  const char* var_names[] = {"x", "y"};
   DAEStruct st =
     STCreate(LOTKA_VOLTERRA_N, LOTKA_VOLTERRA_C, LOTKA_VOLTERRA_D, LOTKA_VOLTERRA_VAR_IDX_MAP, eqn_names, var_names);
 

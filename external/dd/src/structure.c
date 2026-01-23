@@ -23,18 +23,6 @@ void STDestroy(DAEStruct st)
       st->varofs = NULL;
     }
 
-    if (st->eqn_to_idx != NULL)
-    {
-      free(st->eqn_to_idx);
-      st->eqn_to_idx = NULL;
-    }
-
-    if (st->var_to_idx != NULL)
-    {
-      free(st->var_to_idx);
-      st->var_to_idx = NULL;
-    }
-
     sunindextype** var_idx_map = st->var_idx_map;
     if (var_idx_map != NULL)
     {
@@ -86,8 +74,8 @@ DAEStruct STCreate(
   const uint8_t eqnofs[static size],
   const uint8_t varofs[static size],
   const sunindextype* var_idx_map[static size],
-  char** eqn_names,
-  char** var_names
+  const char** eqn_names,
+  const char** var_names
 )
 {
   DAEStruct st = malloc(sizeof(*st));
@@ -122,20 +110,6 @@ DAEStruct STCreate(
 
   st->varofs = malloc(size * sizeof(uint8_t));
   if (st->varofs == NULL)
-  {
-    STDestroy(st);
-    return NULL;
-  }
-
-  st->eqn_to_idx = malloc(size * sizeof(sunindextype));
-  if (st->eqn_to_idx == NULL)
-  {
-    STDestroy(st);
-    return NULL;
-  }
-
-  st->var_to_idx = malloc(size * sizeof(sunindextype));
-  if (st->var_to_idx == NULL)
   {
     STDestroy(st);
     return NULL;
@@ -206,18 +180,10 @@ DAEStruct STCreate(
     return NULL;
   }
 
-  sunindextype eacc = 0;
-  sunindextype vacc = 0;
   for (sunindextype i = 0; i < size; ++i)
   {
-    const uint8_t e   = eqnofs[i];
-    const uint8_t v   = varofs[i];
-    st->eqnofs[i]     = e;
-    st->varofs[i]     = v;
-    st->eqn_to_idx[i] = eacc;
-    st->var_to_idx[i] = vacc;
-    eacc += e + 1;
-    vacc += v + 1;
+    st->eqnofs[i] = eqnofs[i];
+    st->varofs[i] = varofs[i];
   }
 
   sunindextype i_ofs = 0;
@@ -248,4 +214,38 @@ DAEStruct STCreate(
   st->var_names = var_names;
 
   return st;
+}
+
+void STPrint(DAEStruct st, FILE* file)
+{
+  fprintf(file, "--- START STRUCTURE ----\n");
+  fprintf(file, "Equation offsets:\n");
+  for (sunindextype i = 0; i < st->DAE_size; ++i)
+  {
+    fprintf(file, "\t[%ld]%s:\t%d\n", i, ST_EQN_NAME(st, i), st->eqnofs[i]);
+  }
+  fprintf(file, "Variable offsets:\n");
+  for (sunindextype j = 0; j < st->DAE_size; ++j)
+  {
+    {
+      fprintf(file, "\t[%ld]%s:\t%d\n", j, ST_VAR_NAME(st, j), st->varofs[j]);
+    }
+  }
+  for (uint8_t k = 0; k < st->K; ++k)
+  {
+    fprintf(file, "Stage k = %d:\n", ST_STAGE_FROM_INDEX(st, k));
+    fprintf(file, "Equations:\n");
+    for (sunindextype l = 0; l < st->M_k[k]; ++l)
+    {
+      const sunindextype i = st->eqns_k[k][l];
+      fprintf(file, "\t[%ld]%s^(%d)\n", i, ST_EQN_NAME(st, i), ST_EQN_ORDER(st, k, i));
+    }
+    fprintf(file, "Variables:\n");
+    for (sunindextype l = 0; l < st->N_k[k]; ++l)
+    {
+      const sunindextype j = st->vars_k[k][l];
+      fprintf(file, "\t[%ld]%s^(%d)\n", j, ST_VAR_NAME(st, j), ST_VAR_ORDER(st, k, j));
+    }
+  }
+  fprintf(file, "--- END STRUCTURE ------\n");
 }

@@ -31,7 +31,6 @@ int main(void)
   k                     = 1;
   sunbooleantype* known = pm->known_k[k];
   sunindextype* eqns    = st->eqns_k[k];
-  sunindextype* vars    = pm->vars_k[k];
   TEST_ASSERT(st->M_k[k] == 2)
   TEST_ASSERT(eqns[0] == 2);
   TEST_ASSERT(eqns[1] == 3);
@@ -40,13 +39,10 @@ int main(void)
   TEST_ASSERT(known[2]);
   TEST_ASSERT(known[3]);
   TEST_ASSERT(known[4] == SUNFALSE);
-  TEST_ASSERT(vars[0] == 3);
-  TEST_ASSERT(vars[1] == 2);
 
   k     = 2;
   known = pm->known_k[k];
   eqns  = st->eqns_k[k];
-  vars  = pm->vars_k[k];
   TEST_ASSERT(st->M_k[k] == 4)
   TEST_ASSERT(eqns[0] == 0);
   TEST_ASSERT(eqns[1] == 2);
@@ -57,15 +53,10 @@ int main(void)
   TEST_ASSERT(known[2]);
   TEST_ASSERT(known[3]);
   TEST_ASSERT(known[4]);
-  TEST_ASSERT(vars[0] == 4);
-  TEST_ASSERT(vars[1] == 3);
-  TEST_ASSERT(vars[2] == 2);
-  TEST_ASSERT(vars[3] == 1);
 
   k     = 3;
   known = pm->known_k[k];
   eqns  = st->eqns_k[k];
-  vars  = pm->vars_k[k];
   TEST_ASSERT(st->M_k[k] == 5)
   TEST_ASSERT(eqns[0] == 0);
   TEST_ASSERT(eqns[1] == 1);
@@ -77,11 +68,6 @@ int main(void)
   TEST_ASSERT(known[2]);
   TEST_ASSERT(known[3]);
   TEST_ASSERT(known[4]);
-  TEST_ASSERT(vars[0] == 0);
-  TEST_ASSERT(vars[1] == 1);
-  TEST_ASSERT(vars[2] == 2);
-  TEST_ASSERT(vars[3] == 3);
-  TEST_ASSERT(vars[4] == 4);
 
   uint8_t* spec = pm->spec;
   TEST_ASSERT(spec[0] == 3);

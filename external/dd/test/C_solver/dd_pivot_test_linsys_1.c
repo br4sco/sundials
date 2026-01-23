@@ -27,39 +27,27 @@ int main(void)
 
   size_t k              = 0;
   sunbooleantype* known = pm->known_k[k];
-  sunindextype* vars    = pm->vars_k[k];
   TEST_ASSERT(st->M_k[k] == 2)
   TEST_ASSERT(known[0]);
   TEST_ASSERT(known[1] == SUNFALSE);
   TEST_ASSERT(known[2]);
   TEST_ASSERT(known[3] == SUNFALSE);
-  TEST_ASSERT(vars[0] == 0);
-  TEST_ASSERT(vars[1] == 2);
 
   k     = 1;
   known = pm->known_k[k];
-  vars  = pm->vars_k[k];
   TEST_ASSERT(st->M_k[k] == 3)
   TEST_ASSERT(known[0]);
   TEST_ASSERT(known[1] == SUNFALSE);
   TEST_ASSERT(known[2]);
   TEST_ASSERT(known[3]);
-  TEST_ASSERT(vars[0] == 0);
-  TEST_ASSERT(vars[1] == 2);
-  TEST_ASSERT(vars[2] == 3);
 
   k     = 2;
   known = pm->known_k[k];
-  vars  = pm->vars_k[k];
   TEST_ASSERT(st->M_k[k] == 4)
   TEST_ASSERT(known[0]);
   TEST_ASSERT(known[1]);
   TEST_ASSERT(known[2]);
   TEST_ASSERT(known[3]);
-  TEST_ASSERT(vars[0] == 0);
-  TEST_ASSERT(vars[1] == 1);
-  TEST_ASSERT(vars[2] == 2);
-  TEST_ASSERT(vars[3] == 3);
 
   uint8_t* spec = pm->spec;
   TEST_ASSERT(spec[0] == 0);

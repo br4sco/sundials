@@ -194,6 +194,21 @@ void PIVDestroy(PivMem pm)
   free(pm);
 }
 
+void PIVPrint(DAEStruct st, PivMem pm, FILE* file)
+{
+  fprintf(file, "--- START PIVOTDATA ----\n");
+  for (uint8_t k = 0; k < st->K; ++k)
+  {
+    fprintf(file, "Stage k = %d:\n", ST_STAGE_FROM_INDEX(st, k));
+    for (sunindextype n = 0; n < st->N_k[k]; ++n)
+    {
+      const sunindextype j = st->vars_k[k][n];
+      fprintf(file, "\t[%ld]%s^(%d)\t%s\n", j, ST_VAR_NAME(st, j), ST_VAR_ORDER(st, k, j), pm->known_k[k][j] ? "true" : "false");
+    }
+  }
+  fprintf(file, "--- END PIVOTDATA ------\n");
+}
+
 static SUNErrCode PDReset(DAEStruct st, PivMem pm)
 {
   const sunindextype N = pm->DAE_size;
@@ -220,38 +235,75 @@ SUNErrCode PIVPivot(DAEStruct st, DDMatrix A, sunrealtype tol, PivMem pm)
 
     SUNAssert(N > 0, SUN_ERR_OP_FAIL);
 
-    const sunindextype* vars = st->vars_k[k];
-    sunindextype* pm_vars    = pm->vars_k[k];
-    memcpy(pm_vars, vars, N * sizeof(sunindextype));
-
     if (M == 0) { continue; }
 
+    const sunindextype* vars = st->vars_k[k];
     const sunindextype* eqns = st->eqns_k[k];
-
-    const int dof = (int)N - (int)M;
-
-    const uint8_t* varofs = st->varofs;
-
     sunbooleantype* pm_known = pm->known_k[k];
-    if (dof == 0)
+
+    sunindextype m = 0;
+    if (N == M)
     {
-      for (sunindextype l = 0; l < N; ++l) { pm_known[l] = SUNTRUE; }
+      /* If the sub-matrix of the Jacobian is square all variables must be known
+         under the assumption that the Jacobian is regular. */
+
+      for (sunindextype n = 0; n < N; ++n)
+      {
+        const sunindextype j = vars[n];
+        pm_known[j]          = SUNTRUE;
+      }
+      m = M;
     }
     else
     {
-      for (sunindextype l = 0; l < N; ++l)
+      /* Some variables may be marked as known from previous stages. */
+      for (sunindextype n = 0; n < N; ++n)
       {
-        if (varofs[vars[l]] == 0) { pm_known[vars[l]] = SUNTRUE; }
+        const sunindextype j = vars[n];
+        if (pm_known[j]) { m += 1; }
       }
 
-      DDMatrix submat = pm->J_k[k];
-      SUNCheckCall(DDCopySub(A, submat, M, eqns, N, vars));
+      if (m != M)
+      {
+        /* If we don't already have the required number of known variables we
+           need to select columns that forms a regular square sub-matrix. */
 
-      const DDMatrixWorkspace ws = pm->wss[k];
-      SUNCheckCall(DDMatPivot(submat, ws, tol, N, pm_vars));
+        sunindextype* pm_vars = pm->vars_k[k];
+        memcpy(pm_vars, vars, N * sizeof(*pm_vars));
 
-      for (sunindextype l = 0; l < M; ++l) { pm_known[pm_vars[l]] = SUNTRUE; }
+        DDMatrix submat = pm->J_k[k];
+        SUNCheckCall(DDCopySub(A, submat, eqns, pm_vars));
+
+        const DDMatrixWorkspace ws = pm->wss[k];
+        SUNCheckCall(DDMatPivot(submat, ws, tol, N, pm_vars));
+
+        for (sunindextype n = 0; n < N; ++n)
+        {
+          const sunindextype j = pm_vars[n];
+          if (!pm_known[j])
+          {
+            pm_known[j] = SUNTRUE;
+            m += 1;
+            if (m == M) { break; }
+          }
+        }
+
+        /* Because we have marked new variables as known and the derivative of a
+           known variable must also be known, proceed to mark these before the
+           next stage. */
+
+        for (uint8_t kk = k + 1; kk < st->K; ++kk)
+        {
+          for (sunindextype n = 0; n < N; ++n)
+          {
+            const sunindextype j = vars[n];
+            if (pm_known[j]) { pm->known_k[kk][j] = SUNTRUE; }
+          }
+        }
+      }
     }
+
+    SUNAssert(m == M && "Unable to find the required number of known variables for this stage", SUN_ERR_OP_FAIL);
   }
 
   return SUN_SUCCESS;
@@ -327,9 +379,10 @@ SUNErrCode PIVComputeDDSpec(DAEStruct st, PivMem pm)
 
   for (uint8_t k = 0; k < st->K; ++k)
   {
-    for (sunindextype l = 0; l < st->N_k[k]; ++l)
+    for (sunindextype n = 0; n < st->N_k[k]; ++n)
     {
-      const sunindextype j = pm->vars_k[k][l];
+      const sunindextype* vars = st->vars_k[k];
+      const sunindextype j     = vars[n];
       if (!pm->known_k[k][j])
       {
         SUNAssert(k <= 0 || !pm->known_k[k - 1][j], SUN_ERR_OP_FAIL);

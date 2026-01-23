@@ -261,11 +261,11 @@ int LotkaVolterraJacfn_CSC(
  * Pendulum
  * -------------------------------------------------------------------------- */
 
-static char* PENDULUM_EQN_NAMES[]    = {"f₁", "f₂", "f₃"};
-static char* PENDULUM_VAR_NAMES[]    = {"x", "y", "λ"};
-static const sunindextype PENDULUM_N = 3;
-static const uint8_t PENDULUM_C[]    = {0, 0, 2}; /* f₁, f₂, f₃'' */
-static const uint8_t PENDULUM_D[]    = {2, 2, 0}; /* x'', y'', λ */
+static const char* PENDULUM_EQN_NAMES[] = {"f₁", "f₂", "f₃"};
+static const char* PENDULUM_VAR_NAMES[] = {"x", "y", "λ"};
+static const sunindextype PENDULUM_N    = 3;
+static const uint8_t PENDULUM_C[]       = {0, 0, 2}; /* f₁, f₂, f₃'' */
+static const uint8_t PENDULUM_D[]       = {2, 2, 0}; /* x'', y'', λ */
 
 static const sunindextype* PENDULUM_VAR_IDX_MAP[] =
   {(const sunindextype[]){0, 1, 2}, /* x, x', x'' */

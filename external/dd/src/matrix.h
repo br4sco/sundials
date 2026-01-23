@@ -67,14 +67,7 @@ struct _DDMatrix_Ops
     sunindextype n,
     const sunindextype[static n]
   );
-  SUNErrCode (*const copysub)(
-    DDMatrix,
-    DDMatrix,
-    sunindextype m,
-    const sunindextype[static m],
-    sunindextype n,
-    const sunindextype[static n]
-  );
+  SUNErrCode (*const copysub)(DDMatrix, DDMatrix, const sunindextype*, const sunindextype*);
 };
 
 /* --------------------------------------------------------------------------
@@ -127,15 +120,13 @@ static inline DDMatrix DDMatCloneSub(
 static inline SUNErrCode DDCopySub(
   DDMatrix self,
   DDMatrix A,
-  sunindextype m,
-  const sunindextype rows[static m],
-  sunindextype n,
-  const sunindextype cols[static n]
+  const sunindextype* rows,
+  const sunindextype* cols
 )
 {
   SUNFunctionBegin(DDMatGetSUNMat(self)->sunctx);
   SUNCheck(self->ops->copysub, SUN_ERR_NOT_IMPLEMENTED);
-  return self->ops->copysub(self, A, m, rows, n, cols);
+  return self->ops->copysub(self, A, rows, cols);
 }
 
 /* --------------------------------------------------------------------------

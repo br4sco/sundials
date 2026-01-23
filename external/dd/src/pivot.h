@@ -61,6 +61,9 @@ PivMem PIVCreate(SUNContext, DAEStruct, DDMatrix);
 /** @brief Destroys pivot data. */
 void PIVDestroy(PivMem);
 
+/** @brief Print pvito data. */
+void PIVPrint(DAEStruct, PivMem, FILE*);
+
 /* /\** @brief Prints sub-matrix at the the given stage *\/ */
 /* void PSPrintSubmat(const Structure[static 1], const PivMem[static 1], uint8_t, */
 /*                    FILE*); */
