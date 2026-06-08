@@ -1,5 +1,4 @@
 #include <idas/idas.h>
-#include <math.h>
 #include <nvector/nvector_serial.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -115,7 +114,7 @@ int main(int argc, char* argv[])
   case CSR:
   case CSC:
     J =
-      SUNSparseMatrix(N, N, PENDULUM_JAC_NNZ + 4, mat_type == CSR ? CSR_MAT : CSC_MAT, sunctx);
+      SUNSparseMatrix(N, N, PENDULUM_JAC_NNZ + 0 + 4, mat_type == CSR ? CSR_MAT : CSC_MAT, sunctx);
     TEST_ASSERT(J);
     LS = SUNLinSol_KLU(Y, J, sunctx);
     TEST_ASSERT(LS);
