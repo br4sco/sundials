@@ -115,7 +115,7 @@ DAEStruct STCreate(
     return NULL;
   }
 
-  st->var_idx_map = malloc(size * sizeof(sunindextype));
+  st->var_idx_map = malloc(size * sizeof(*st->var_idx_map));
   if (st->var_idx_map == NULL)
   {
     STDestroy(st);
