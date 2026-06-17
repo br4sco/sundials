@@ -17,7 +17,7 @@ int main(void)
                           PENDULUM_VAR_IDX_MAP, NULL, NULL);
 
   TEST_ASSERT(st != NULL);
-  DDMatrix jac = DDMatWrapDense(jac_pendulum_create(cos(0), sin(0)));
+  DDMatrix jac = DDMatWrapDense(jac_pendulum_create(0, -1));
   TEST_ASSERT(jac != NULL);
   PivMem pm = PIVCreate(CTX, st, jac);
   TEST_ASSERT(pm != NULL);
@@ -27,14 +27,14 @@ int main(void)
 
   size_t k              = 0;
   sunbooleantype* known = pm->known_k[k];
-  TEST_ASSERT(known[0]);
-  TEST_ASSERT(known[1] == SUNFALSE);
+  TEST_ASSERT(known[0] == SUNFALSE);
+  TEST_ASSERT(known[1]);
   TEST_ASSERT(known[2] == SUNFALSE);
 
   k     = 1;
   known = pm->known_k[k];
-  TEST_ASSERT(known[0]);
-  TEST_ASSERT(known[1] == SUNFALSE);
+  TEST_ASSERT(known[0] == SUNFALSE);
+  TEST_ASSERT(known[1]);
   TEST_ASSERT(known[2] == SUNFALSE);
 
   k     = 2;
@@ -44,11 +44,11 @@ int main(void)
   TEST_ASSERT(known[2]);
 
   uint8_t* spec = pm->spec;
-  TEST_ASSERT(spec[0] == 0);
-  TEST_ASSERT(spec[1] == 2);
+  TEST_ASSERT(spec[0] == 2);
+  TEST_ASSERT(spec[1] == 0);
   TEST_ASSERT(spec[2] == 0);
   TEST_ASSERT(pm->NNZ_spec == 1);
-  TEST_ASSERT(pm->NZ_spec[0] == 1);
+  TEST_ASSERT(pm->NZ_spec[0] == 0);
 
   PIVDestroy(pm);
   STDestroy(st);

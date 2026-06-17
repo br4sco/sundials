@@ -18,6 +18,7 @@ set(unit_tests
     "dd_pivot_test_create_destroy\;"
     "dd_pivot_test_pendulum_1\;"
     "dd_pivot_test_pendulum_2\;"
+    "dd_pivot_test_pendulum_3\;"
     "dd_pivot_test_linsys_1\;"
     "dd_pivot_test_nonlinsys_1\;"
     "model_lotka-volterra\;n"

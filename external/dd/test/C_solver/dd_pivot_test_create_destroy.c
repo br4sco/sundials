@@ -13,11 +13,11 @@ int main(void)
 {
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
-  DAEStruct st =
-    STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, PENDULUM_VAR_IDX_MAP, NULL, NULL);
+  DAEStruct st = STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D,
+                          PENDULUM_VAR_IDX_MAP, NULL, NULL);
 
   TEST_ASSERT(st != NULL);
-  DDMatrix jac = DDMatWrapDense(jac_pendulum_create(0));
+  DDMatrix jac = DDMatWrapDense(jac_pendulum_create(cos(0), sin(0)));
   TEST_ASSERT(jac != NULL);
 
   PivMem pm = PIVCreate(CTX, st, jac);

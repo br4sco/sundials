@@ -30,12 +30,10 @@ static SUNMatrix jac_lotka_volterra_create(void)
  * Pendulum
  * -------------------------------------------------------------------------- */
 
-static SUNMatrix jac_pendulum_create(sunrealtype theta)
+static SUNMatrix jac_pendulum_create(sunrealtype x, sunrealtype y)
 {
   SUNMatrix mat = SUNDenseMatrix(PENDULUM_N, PENDULUM_N, CTX);
 
-  sunrealtype x           = cos(theta);
-  sunrealtype y           = sin(theta);
   SM_ELEMENT_D(mat, 0, 0) = ONE;
   SM_ELEMENT_D(mat, 0, 2) = x;
   SM_ELEMENT_D(mat, 1, 1) = ONE;

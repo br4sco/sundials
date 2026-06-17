@@ -2,7 +2,6 @@
 #include <sundials/sundials_core.h>
 #include <sunmatrix/sunmatrix_dense.h>
 
-#include "dd_math.h"
 #include "matrix.h"
 #include "models.h"
 #include "pivot.h"
@@ -14,11 +13,11 @@ int main(void)
 {
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
-  DAEStruct st =
-    STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, PENDULUM_VAR_IDX_MAP, NULL, NULL);
+  DAEStruct st = STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D,
+                          PENDULUM_VAR_IDX_MAP, NULL, NULL);
 
   TEST_ASSERT(st != NULL);
-  DDMatrix jac = DDMatWrapDense(jac_pendulum_create(PI / 2));
+  DDMatrix jac = DDMatWrapDense(jac_pendulum_create(0, 1));
   TEST_ASSERT(jac != NULL);
   PivMem pm = PIVCreate(CTX, st, jac);
   TEST_ASSERT(pm != NULL);
