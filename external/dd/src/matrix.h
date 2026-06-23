@@ -53,21 +53,20 @@ struct _generic_DDMatrixWorkspace
 struct _DDMatrix_Ops
 {
   DDMatrixWorkspace (*const createworkspace)(DDMatrix);
-  SUNErrCode (*const pivot)(
-    DDMatrix,
-    DDMatrixWorkspace,
-    sunrealtype,
-    sunindextype n,
-    sunindextype[static n]
-  );
-  DDMatrix (*const clonesub)(
-    DDMatrix,
-    sunindextype m,
-    const sunindextype[static m],
-    sunindextype n,
-    const sunindextype[static n]
-  );
-  SUNErrCode (*const copysub)(DDMatrix, DDMatrix, const sunindextype*, const sunindextype*);
+  SUNErrCode (*const pivot)(DDMatrix,
+                            DDMatrixWorkspace,
+                            sunrealtype,
+                            sunindextype n,
+                            sunindextype[static n]);
+  DDMatrix (*const clonesub)(DDMatrix,
+                             sunindextype m,
+                             const sunindextype[static m],
+                             sunindextype n,
+                             const sunindextype[static n]);
+  SUNErrCode (*const copysub)(DDMatrix,
+                              DDMatrix,
+                              const sunindextype*,
+                              const sunindextype*);
 };
 
 /* --------------------------------------------------------------------------
@@ -89,13 +88,11 @@ static inline DDMatrixWorkspace DDMatCreateWS(DDMatrix self)
 }
 
 /** @brief Pivots underlying matrix columns to the left. */
-static inline SUNErrCode DDMatPivot(
-  DDMatrix self,
-  DDMatrixWorkspace ws,
-  sunrealtype tol,
-  sunindextype n,
-  sunindextype colpivots[static n]
-)
+static inline SUNErrCode DDMatPivot(DDMatrix self,
+                                    DDMatrixWorkspace ws,
+                                    sunrealtype tol,
+                                    sunindextype n,
+                                    sunindextype colpivots[static n])
 {
   SUNFunctionBegin(DDMatGetSUNMat(self)->sunctx);
   SUNCheck(self->ops->pivot, SUN_ERR_NOT_IMPLEMENTED);
@@ -103,13 +100,11 @@ static inline SUNErrCode DDMatPivot(
 }
 
 /** @brief Clones a sub-matrix. */
-static inline DDMatrix DDMatCloneSub(
-  const DDMatrix self,
-  sunindextype m,
-  const sunindextype rows[static m],
-  sunindextype n,
-  const sunindextype cols[static n]
-)
+static inline DDMatrix DDMatCloneSub(const DDMatrix self,
+                                     sunindextype m,
+                                     const sunindextype rows[static m],
+                                     sunindextype n,
+                                     const sunindextype cols[static n])
 {
   SUNFunctionBegin(DDMatGetSUNMat(self)->sunctx);
   SUNCheckNull(self->ops->clonesub, SUN_ERR_NOT_IMPLEMENTED);
@@ -117,12 +112,10 @@ static inline DDMatrix DDMatCloneSub(
 }
 
 /** @brief Copies a sub-matrix. */
-static inline SUNErrCode DDCopySub(
-  DDMatrix self,
-  DDMatrix A,
-  const sunindextype* rows,
-  const sunindextype* cols
-)
+static inline SUNErrCode DDCopySub(DDMatrix self,
+                                   DDMatrix A,
+                                   const sunindextype* rows,
+                                   const sunindextype* cols)
 {
   SUNFunctionBegin(DDMatGetSUNMat(self)->sunctx);
   SUNCheck(self->ops->copysub, SUN_ERR_NOT_IMPLEMENTED);
@@ -151,6 +144,9 @@ DDMatrix DDMatWrapDense(SUNMatrix);
 DDMatrix DDMatWrapSparse(SUNMatrix);
 
 /** @brief Creates a sparse matrix based on additional structural information. */
-SUNMatrix DDSparseSUNMatFromStructure(const DAEStruct*, sunindextype, int, SUNContext);
+SUNMatrix DDSparseSUNMatFromStructure(const DAEStruct*,
+                                      sunindextype,
+                                      int,
+                                      SUNContext);
 
 #endif

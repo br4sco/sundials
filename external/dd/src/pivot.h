@@ -24,8 +24,8 @@ typedef struct
 {
   SUNContext sunctx; /**< Sundials context  */
 
-  sunindextype DAE_size;    /**< DAE size */
-  sunindextype N_diff_vars; /**< Number of diff equations in first-order DAE */
+  sunindextype N; /**< Number of variables and equations of the zero'th derivative order */
+  sunindextype N_diff; /**< Number of differential equations and differential variables in first-order index-reduced DAE */
 
   /** Defines differential variable aliases. That is:
       `d/dt Y[diff_var_aliases[j].fst] = Y[diff_var_aliases[j].snd]`. */
@@ -39,16 +39,16 @@ typedef struct
       and yy_diff_alias_row[i] is the equation number of this alias equation. */
   sunindextype* yp_diff_alias_row;
 
-  uint8_t K;                /**< Number of stages */
-  uint8_t* spec;            /**< Dummy derivative specification */
-  sunindextype NNZ_spec;    /**< Number of non-zero entries in `spec` */
-  sunindextype* NZ_spec;    /**< Non-zero entries in `spec` */
-  sunbooleantype** known_k; /**< Indicates known variables at each stage */
-  sunindextype** vars_k;    /**< Pivoted variables in each stage */
-  DDMatrix* J_k;            /**< Jacobian subset for each stage */
-  DDMatrixWorkspace* wss;   /**< Workspace for each stage */
-  sunindextype* vars;       /**< Variables in all stages  */
-  sunbooleantype* known;    /**< Known variables in all stages */
+  uint8_t K;                    /**< Number of stages */
+  uint8_t* spec;                /**< Dummy derivative specification */
+  sunindextype NNZ_spec;        /**< Number of non-zero entries in `spec` */
+  sunindextype* NZ_spec;        /**< Non-zero entries in `spec` */
+  sunbooleantype** known_k;     /**< Indicates known variables at each stage */
+  sunindextype** vars_k;        /**< Pivoted variables in each stage */
+  DDMatrix* J_k;                /**< Jacobian subset for each stage */
+  DDMatrixWorkspace* wss;       /**< Workspace for each stage */
+  sunindextype* vars_k_flat;    /**< `vars_k` as a flat array */
+  sunbooleantype* known_k_flat; /**< `known_k` as a flat array */
 } _PivMem;
 
 /** @brief Holds pivoting state */

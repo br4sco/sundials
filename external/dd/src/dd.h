@@ -85,16 +85,14 @@ typedef int DDJacFn0(sunrealtype t, N_Vector Y, SUNMatrix J, void* user_data);
  * @return a value `0` on success, a positive values if a recoverable error
  *         occurred and a negative value of a non-recoverable error occurred.
  */
-typedef int DDLsJacFn1(
-  sunrealtype t,
-  N_Vector Y,
-  N_Vector R,
-  SUNMatrix J,
-  void* user_data,
-  N_Vector tmp1,
-  N_Vector tmp2,
-  N_Vector tmp3
-);
+typedef int DDLsJacFn1(sunrealtype t,
+                       N_Vector Y,
+                       N_Vector R,
+                       SUNMatrix J,
+                       void* user_data,
+                       N_Vector tmp1,
+                       N_Vector tmp2,
+                       N_Vector tmp3);
 
 /**
  * @brief Jacobian callback function, type 2, for `DDResFn`.
@@ -140,19 +138,17 @@ typedef int DDLsJacFn1(
  * @return a value `0` on success, a positive values if a recoverable error
  *         occurred and a negative value of a non-recoverable error occurred.
  */
-typedef int DDLsJacFn2(
-  const sunindextype yy_diff_alias_row[static 1],
-  const sunindextype yp_diff_alias_row[static 1],
-  sunrealtype t,
-  sunrealtype cj,
-  N_Vector Y,
-  N_Vector R,
-  SUNMatrix J,
-  void* user_data,
-  N_Vector tmp1,
-  N_Vector tmp2,
-  N_Vector tmp3
-);
+typedef int DDLsJacFn2(const sunindextype yy_diff_alias_row[static 1],
+                       const sunindextype yp_diff_alias_row[static 1],
+                       sunrealtype t,
+                       sunrealtype cj,
+                       N_Vector Y,
+                       N_Vector R,
+                       SUNMatrix J,
+                       void* user_data,
+                       N_Vector tmp1,
+                       N_Vector tmp2,
+                       N_Vector tmp3);
 
 /**
  * @brief Callback function for column-wise computing the a sparse Jacobian for
@@ -183,18 +179,16 @@ typedef int DDLsJacFn2(
  * @return a value `0` on success, a positive values if a recoverable error
  *         occurred and a negative value of a non-recoverable error occurred.
  */
-typedef int DDLsJacColFn_CSC(
-  sunindextype j,
-  sunrealtype t,
-  N_Vector Y,
-  N_Vector R,
-  SUNMatrix J,
-  sunindextype* nnz,
-  void* user_data,
-  N_Vector tmp1,
-  N_Vector tmp2,
-  N_Vector tmp3
-);
+typedef int DDLsJacColFn_CSC(sunindextype j,
+                             sunrealtype t,
+                             N_Vector Y,
+                             N_Vector R,
+                             SUNMatrix J,
+                             sunindextype* nnz,
+                             void* user_data,
+                             N_Vector tmp1,
+                             N_Vector tmp2,
+                             N_Vector tmp3);
 
 /** @brief Enumerates Jacobian callback function types. */
 typedef enum DDLsJacFnId
@@ -244,21 +238,19 @@ typedef struct
  * @return a value `0` on success, a positive values if a recoverable error
  *         occurred and a negative value of a non-recoverable error occurred.
  */
-static inline int DDJacFn_CSC(
-  sunindextype M,
-  DDLsJacColFn_CSC* fn,
-  const sunindextype yy_diff_alias_row[static 1],
-  const sunindextype yp_diff_alias_row[static 1],
-  sunrealtype t,
-  sunrealtype cj,
-  N_Vector Y,
-  N_Vector R,
-  SUNMatrix J,
-  void* user_data,
-  N_Vector tmp1,
-  N_Vector tmp2,
-  N_Vector tmp3
-)
+static inline int DDJacFn_CSC(sunindextype M,
+                              DDLsJacColFn_CSC* fn,
+                              const sunindextype yy_diff_alias_row[static 1],
+                              const sunindextype yp_diff_alias_row[static 1],
+                              sunrealtype t,
+                              sunrealtype cj,
+                              N_Vector Y,
+                              N_Vector R,
+                              SUNMatrix J,
+                              void* user_data,
+                              N_Vector tmp1,
+                              N_Vector tmp2,
+                              N_Vector tmp3)
 {
   SUNFunctionBegin(J->sunctx);
 
@@ -324,18 +316,16 @@ static inline int DDJacFn_CSC(
  * @return a value `0` on success, a positive values if a recoverable error
  *         occurred and a negative value of a non-recoverable error occurred.
  */
-typedef int DDSensResFn(
-  int Ns,
-  sunrealtype t,
-  N_Vector Y,
-  N_Vector R,
-  N_Vector YS[static Ns],
-  N_Vector RS[static Ns],
-  void* user_data,
-  N_Vector tmp1,
-  N_Vector tmp2,
-  N_Vector tmp3
-);
+typedef int DDSensResFn(int Ns,
+                        sunrealtype t,
+                        N_Vector Y,
+                        N_Vector R,
+                        N_Vector YS[static Ns],
+                        N_Vector RS[static Ns],
+                        void* user_data,
+                        N_Vector tmp1,
+                        N_Vector tmp2,
+                        N_Vector tmp3);
 
 /**
  * @brief Adjoint sensitivity residual callback function.
@@ -356,14 +346,12 @@ typedef int DDSensResFn(
  * @return a value `0` on success, a positive values if a recoverable error
  *         occurred and a negative value of a non-recoverable error occurred.
  */
-typedef int DDResFnB(
-  sunrealtype t,
-  N_Vector Y,
-  N_Vector yB,
-  N_Vector ypB,
-  N_Vector rB,
-  void* user_data
-);
+typedef int DDResFnB(sunrealtype t,
+                     N_Vector Y,
+                     N_Vector yB,
+                     N_Vector ypB,
+                     N_Vector rB,
+                     void* user_data);
 
 /* ==========================================================================
  * Solver Interface
@@ -379,7 +367,14 @@ DDMem DDCreate(SUNContext);
 void DDFree(DDMem*);
 
 /** @brief Initializes a solver session. */
-int DDInit(DDMem, DAEStruct, sunrealtype, DDJacFn0, DDMatrix, DDResFn, sunrealtype, N_Vector);
+int DDInit(DDMem,
+           DAEStruct,
+           sunrealtype,
+           DDJacFn0,
+           DDMatrix,
+           DDResFn,
+           sunrealtype,
+           N_Vector);
 
 /** @brief Re-initializes a solver session. */
 int DDReInit(DDMem, sunrealtype, N_Vector);

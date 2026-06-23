@@ -57,7 +57,7 @@ int main(void)
   TEST_ASSERT(pm->NNZ_spec == 1);
   TEST_ASSERT(pm->NZ_spec[0] == 1);
 
-  TEST_ASSERT(pm->N_diff_vars == 2);
+  TEST_ASSERT(pm->N_diff == 2);
   TEST_ASSERT(pm->diff_var_aliases[0].fst == 3);
   TEST_ASSERT(pm->diff_var_aliases[0].snd == 4);
   TEST_ASSERT(pm->diff_var_aliases[1].fst == 4);

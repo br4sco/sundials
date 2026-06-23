@@ -36,6 +36,10 @@ $(BUILD_DIR):
 install: $(BUILD_DIR)
 	make -C $(BUILD_DIR) install
 
+.PHONY: format
+format:
+	clang-format -i $(shell find external/dd/src -name "*.h" -o -name "*.c")
+
 .PHONY: clean
 clean:
 	rm -rf $(BUILD_DIR)

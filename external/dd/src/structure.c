@@ -8,8 +8,8 @@ void STDestroy(DAEStruct st)
 {
   if (st)
   {
-    sunindextype size = st->DAE_size;
-    uint8_t K         = st->K;
+    sunindextype N = st->N;
+    uint8_t K      = st->K;
 
     if (st->eqnofs != NULL)
     {
@@ -23,18 +23,18 @@ void STDestroy(DAEStruct st)
       st->varofs = NULL;
     }
 
-    sunindextype** var_idx_map = st->var_idx_map;
+    sunindextype** var_idx_map = st->var_deriv_chains;
     if (var_idx_map != NULL)
     {
-      for (sunindextype j = 0; j < size; ++j) { var_idx_map[j] = NULL; }
+      for (sunindextype j = 0; j < N; ++j) { var_idx_map[j] = NULL; }
       free(var_idx_map);
-      st->var_idx_map_data = NULL;
+      st->var_deriv_chains_flat = NULL;
     }
 
-    if (st->var_idx_map_data != NULL)
+    if (st->var_deriv_chains_flat != NULL)
     {
-      free(st->var_idx_map_data);
-      st->var_idx_map_data = NULL;
+      free(st->var_deriv_chains_flat);
+      st->var_deriv_chains_flat = NULL;
     }
 
     sunindextype** eqns = st->eqns_k;
@@ -53,87 +53,85 @@ void STDestroy(DAEStruct st)
       st->vars_k = NULL;
     }
 
-    if (st->eqns != NULL)
+    if (st->eqns_k_flat != NULL)
     {
-      free(st->eqns);
-      st->eqns = NULL;
+      free(st->eqns_k_flat);
+      st->eqns_k_flat = NULL;
     }
 
-    if (st->vars != NULL)
+    if (st->vars_k_flat != NULL)
     {
-      free(st->vars);
-      st->vars = NULL;
+      free(st->vars_k_flat);
+      st->vars_k_flat = NULL;
     }
 
     free(st);
   }
 }
 
-DAEStruct STCreate(
-  sunindextype size,
-  const uint8_t eqnofs[static size],
-  const uint8_t varofs[static size],
-  const sunindextype* var_idx_map[static size],
-  const char** eqn_names,
-  const char** var_names
-)
+DAEStruct STCreate(sunindextype N,
+                   const uint8_t eqnofs[static N],
+                   const uint8_t varofs[static N],
+                   const sunindextype* var_idx_map[static N],
+                   const char** eqn_names,
+                   const char** var_names)
 {
   DAEStruct st = malloc(sizeof(*st));
   if (st == NULL) { return NULL; }
 
-  st->DAE_size = size;
+  st->N = N;
 
   uint8_t K = 0;
-  for (sunindextype i = 0; i < size; ++i)
+  for (sunindextype i = 0; i < N; ++i)
   {
     if (varofs[i] > K) { K = varofs[i]; }
   }
   K++;
   st->K = K;
 
-  st->M                 = 0;
-  st->N                 = 0;
-  st->DAE_backward_size = 0;
-  for (sunindextype i = 0; i < size; ++i)
+  st->M_all_orders = 0;
+  st->N_all_orders = 0;
+  st->N_backwards  = 0;
+  for (sunindextype i = 0; i < N; ++i)
   {
-    st->M += eqnofs[i] + 1;
-    st->N += varofs[i] + 1;
-    st->DAE_backward_size += SUNMAX(varofs[i], 1);
+    st->M_all_orders += eqnofs[i] + 1;
+    st->N_all_orders += varofs[i] + 1;
+    st->N_backwards += SUNMAX(varofs[i], 1);
   }
 
-  st->eqnofs = malloc(size * sizeof(uint8_t));
+  st->eqnofs = malloc(N * sizeof(uint8_t));
   if (st->eqnofs == NULL)
   {
     STDestroy(st);
     return NULL;
   }
 
-  st->varofs = malloc(size * sizeof(uint8_t));
+  st->varofs = malloc(N * sizeof(uint8_t));
   if (st->varofs == NULL)
   {
     STDestroy(st);
     return NULL;
   }
 
-  st->var_idx_map = malloc(size * sizeof(*st->var_idx_map));
-  if (st->var_idx_map == NULL)
+  st->var_deriv_chains = malloc(N * sizeof(*st->var_deriv_chains));
+  if (st->var_deriv_chains == NULL)
   {
     STDestroy(st);
     return NULL;
   }
-  st->var_idx_map_data = malloc(st->N * sizeof(sunindextype));
-  if (st->var_idx_map_data == NULL)
+  st->var_deriv_chains_flat = malloc(st->N_all_orders * sizeof(sunindextype));
+  if (st->var_deriv_chains_flat == NULL)
   {
     STDestroy(st);
     return NULL;
   }
   sunindextype ofs = 0;
-  for (sunindextype j = 0; j < size; ++j)
+  for (sunindextype j = 0; j < N; ++j)
   {
-    st->var_idx_map[j] = st->var_idx_map_data + ofs;
+    st->var_deriv_chains[j] = st->var_deriv_chains_flat + ofs;
     for (uint8_t k = 0; k <= varofs[j]; ++k)
     {
-      st->var_idx_map_data[ofs] = var_idx_map[j][k];
+      st->var_deriv_chains_flat[ofs] = var_idx_map[j][k];
       ++ofs;
     }
   }
@@ -166,21 +164,21 @@ DAEStruct STCreate(
     return NULL;
   }
 
-  st->eqns = malloc(st->M * sizeof(sunindextype));
-  if (st->eqns == NULL)
+  st->eqns_k_flat = malloc(st->M_all_orders * sizeof(sunindextype));
+  if (st->eqns_k_flat == NULL)
   {
     STDestroy(st);
     return NULL;
   }
 
-  st->vars = malloc(st->N * sizeof(sunindextype));
-  if (st->vars == NULL)
+  st->vars_k_flat = malloc(st->N_all_orders * sizeof(sunindextype));
+  if (st->vars_k_flat == NULL)
   {
     STDestroy(st);
     return NULL;
   }
 
-  for (sunindextype i = 0; i < size; ++i)
+  for (sunindextype i = 0; i < N; ++i)
   {
     st->eqnofs[i] = eqnofs[i];
     st->varofs[i] = varofs[i];
@@ -190,22 +188,22 @@ DAEStruct STCreate(
   sunindextype j_ofs = 0;
   for (uint8_t k = 0; k < K; ++k)
   {
-    for (sunindextype i = 0; i < size; ++i)
+    for (sunindextype i = 0; i < N; ++i)
     {
       if (ST_STAGE_FROM_INDEX(st, k) + (int)eqnofs[i] >= 0)
       {
-        st->eqns[st->M_k[k] + i_ofs] = i;
+        st->eqns_k_flat[st->M_k[k] + i_ofs] = i;
         st->M_k[k]++;
       }
 
       if (ST_STAGE_FROM_INDEX(st, k) + (int)varofs[i] >= 0)
       {
-        st->vars[st->N_k[k] + j_ofs] = i;
+        st->vars_k_flat[st->N_k[k] + j_ofs] = i;
         st->N_k[k]++;
       }
     }
-    st->eqns_k[k] = st->eqns + i_ofs;
-    st->vars_k[k] = st->vars + j_ofs;
+    st->eqns_k[k] = st->eqns_k_flat + i_ofs;
+    st->vars_k[k] = st->vars_k_flat + j_ofs;
     i_ofs += st->M_k[k];
     j_ofs += st->N_k[k];
   }
@@ -220,12 +218,12 @@ void STPrint(DAEStruct st, FILE* file)
 {
   fprintf(file, "--- START STRUCTURE ----\n");
   fprintf(file, "Equation offsets:\n");
-  for (sunindextype i = 0; i < st->DAE_size; ++i)
+  for (sunindextype i = 0; i < st->N; ++i)
   {
     fprintf(file, "\t[%ld]%s:\t%d\n", i, ST_EQN_NAME(st, i), st->eqnofs[i]);
   }
   fprintf(file, "Variable offsets:\n");
-  for (sunindextype j = 0; j < st->DAE_size; ++j)
+  for (sunindextype j = 0; j < st->N; ++j)
   {
     {
       fprintf(file, "\t[%ld]%s:\t%d\n", j, ST_VAR_NAME(st, j), st->varofs[j]);
@@ -238,13 +236,15 @@ void STPrint(DAEStruct st, FILE* file)
     for (sunindextype l = 0; l < st->M_k[k]; ++l)
     {
       const sunindextype i = st->eqns_k[k][l];
-      fprintf(file, "\t[%ld]%s^(%d)\n", i, ST_EQN_NAME(st, i), ST_EQN_ORDER(st, k, i));
+      fprintf(file, "\t[%ld]%s^(%d)\n", i, ST_EQN_NAME(st, i),
+              ST_EQN_ORDER(st, k, i));
     }
     fprintf(file, "Variables:\n");
     for (sunindextype l = 0; l < st->N_k[k]; ++l)
     {
       const sunindextype j = st->vars_k[k][l];
-      fprintf(file, "\t[%ld]%s^(%d)\n", j, ST_VAR_NAME(st, j), ST_VAR_ORDER(st, k, j));
+      fprintf(file, "\t[%ld]%s^(%d)\n", j, ST_VAR_NAME(st, j),
+              ST_VAR_ORDER(st, k, j));
     }
   }
   fprintf(file, "--- END STRUCTURE ------\n");

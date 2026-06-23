@@ -20,26 +20,28 @@ PivMem PIVCreate(SUNContext sunctx, DAEStruct st, DDMatrix A)
 
   pm->sunctx = sunctx;
 
-  const sunindextype dae_size = st->DAE_size;
-  const uint8_t K             = st->K;
+  const sunindextype st_N = st->N;
+  const uint8_t K         = st->K;
 
-  pm->DAE_size = dae_size;
+  pm->N = st_N;
 
-  pm->N_diff_vars = st->N - st->M;
-  pm->diff_var_aliases = malloc(pm->N_diff_vars * sizeof(*pm->diff_var_aliases));
+  pm->N_diff           = st->N_all_orders - st->M_all_orders;
+  pm->diff_var_aliases = malloc(pm->N_diff * sizeof(*pm->diff_var_aliases));
   SUNAssertNull(pm->diff_var_aliases, SUN_ERR_MALLOC_FAIL);
-  pm->yy_diff_alias_row = malloc(st->N * sizeof(*pm->yy_diff_alias_row));
+  pm->yy_diff_alias_row =
+    malloc(st->N_all_orders * sizeof(*pm->yy_diff_alias_row));
   SUNAssertNull(pm->yy_diff_alias_row, SUN_ERR_MALLOC_FAIL);
-  pm->yp_diff_alias_row = malloc(st->N * sizeof(*pm->yp_diff_alias_row));
+  pm->yp_diff_alias_row =
+    malloc(st->N_all_orders * sizeof(*pm->yp_diff_alias_row));
   SUNAssertNull(pm->yp_diff_alias_row, SUN_ERR_MALLOC_FAIL);
 
   pm->K = K;
 
-  pm->spec = calloc(dae_size, sizeof(*pm->spec));
+  pm->spec = calloc(st_N, sizeof(*pm->spec));
   SUNAssertNull(pm->spec, SUN_ERR_MALLOC_FAIL);
 
   pm->NNZ_spec = 0;
-  pm->NZ_spec  = malloc(dae_size * sizeof(*pm->NZ_spec));
+  pm->NZ_spec  = malloc(st_N * sizeof(*pm->NZ_spec));
   SUNAssertNull(pm->NZ_spec, SUN_ERR_MALLOC_FAIL);
 
   pm->known_k = malloc(K * sizeof(*pm->known_k));
@@ -54,11 +56,11 @@ PivMem PIVCreate(SUNContext sunctx, DAEStruct st, DDMatrix A)
   pm->wss = malloc(K * sizeof(DDMatrixWorkspace*));
   SUNAssertNull(pm->wss, SUN_ERR_MALLOC_FAIL);
 
-  pm->known = calloc(K * dae_size, sizeof(*pm->known));
-  SUNAssertNull(pm->known, SUN_ERR_MALLOC_FAIL);
+  pm->known_k_flat = calloc(K * st_N, sizeof(*pm->known_k_flat));
+  SUNAssertNull(pm->known_k_flat, SUN_ERR_MALLOC_FAIL);
 
-  pm->vars = calloc(st->N, sizeof(*pm->vars));
-  SUNAssertNull(pm->vars, SUN_ERR_MALLOC_FAIL);
+  pm->vars_k_flat = calloc(st->N_all_orders, sizeof(*pm->vars_k_flat));
+  SUNAssertNull(pm->vars_k_flat, SUN_ERR_MALLOC_FAIL);
 
   sunindextype ofs = 0;
   for (uint8_t k = 0; k < K; ++k)
@@ -86,8 +88,8 @@ PivMem PIVCreate(SUNContext sunctx, DAEStruct st, DDMatrix A)
       pm->wss[k] = ws;
     }
 
-    pm->known_k[k] = pm->known + k * dae_size;
-    pm->vars_k[k]  = pm->vars + ofs;
+    pm->known_k[k] = pm->known_k_flat + k * st_N;
+    pm->vars_k[k]  = pm->vars_k_flat + ofs;
     ofs += N;
   }
 
@@ -171,16 +173,16 @@ void PIVDestroy(PivMem pm)
     pm->wss = NULL;
   }
 
-  if (pm->known != NULL)
+  if (pm->known_k_flat != NULL)
   {
-    free(pm->known);
-    pm->known = NULL;
+    free(pm->known_k_flat);
+    pm->known_k_flat = NULL;
   }
 
-  if (pm->vars != NULL)
+  if (pm->vars_k_flat != NULL)
   {
-    free(pm->vars);
-    pm->vars = NULL;
+    free(pm->vars_k_flat);
+    pm->vars_k_flat = NULL;
   }
 
   free(pm);
@@ -204,13 +206,15 @@ void PIVPrint(DAEStruct st, PivMem pm, FILE* file)
 
 static SUNErrCode PDReset(DAEStruct st, PivMem pm)
 {
-  const sunindextype N = pm->DAE_size;
+  const sunindextype N = pm->N;
   const uint8_t K      = pm->K;
 
   memset(pm->spec, 0, N * sizeof(*pm->spec));
-  memset(pm->known, SUNFALSE, N * K * sizeof(*pm->known));
-  memset(pm->yy_diff_alias_row, -1, st->N * sizeof(*pm->yy_diff_alias_row));
-  memset(pm->yp_diff_alias_row, -1, st->N * sizeof(*pm->yp_diff_alias_row));
+  memset(pm->known_k_flat, SUNFALSE, N * K * sizeof(*pm->known_k_flat));
+  memset(pm->yy_diff_alias_row, -1,
+         st->N_all_orders * sizeof(*pm->yy_diff_alias_row));
+  memset(pm->yp_diff_alias_row, -1,
+         st->N_all_orders * sizeof(*pm->yp_diff_alias_row));
 
   return SUN_SUCCESS;
 }
@@ -345,17 +349,17 @@ static SUNErrCode ComputeDiffAliases(DAEStruct st, PivMem pm)
     const uint8_t spec     = pm->spec[var];
     for (uint8_t j = 0; j < spec; ++j)
     {
-      SUNAssert(ofs < pm->N_diff_vars, SUN_ERR_ARG_OUTOFRANGE);
+      SUNAssert(ofs < pm->N_diff, SUN_ERR_ARG_OUTOFRANGE);
 
-      sunindextype yy_idx = st->var_idx_map[var][j],
-                   yp_idx = st->var_idx_map[var][j + 1];
+      sunindextype yy_idx = st->var_deriv_chains[var][j],
+                   yp_idx = st->var_deriv_chains[var][j + 1];
 
       pm->diff_var_aliases[ofs] = (Pair_sunindextype){
         .fst = yy_idx,
         .snd = yp_idx,
       };
 
-      sunindextype eqn              = ofs + st->M;
+      sunindextype eqn              = ofs + st->M_all_orders;
       pm->yy_diff_alias_row[yy_idx] = eqn;
       pm->yp_diff_alias_row[yp_idx] = eqn;
 
@@ -384,7 +388,7 @@ SUNErrCode PIVComputeDDSpec(DAEStruct st, PivMem pm)
     }
   }
 
-  pm->NNZ_spec = ComputeNZSpec(st->DAE_size, pm->spec, pm->NZ_spec);
+  pm->NNZ_spec = ComputeNZSpec(st->N, pm->spec, pm->NZ_spec);
   SUNCheckCall(ComputeDiffAliases(st, pm));
 
   return SUN_SUCCESS;
@@ -394,8 +398,8 @@ SUNErrCode PIVUpdateDDSpec(DAEStruct st, const uint8_t spec[static 1], PivMem pm
 {
   SUNFunctionBegin(pm->sunctx);
 
-  memcpy(pm->spec, spec, pm->DAE_size * sizeof(*spec));
-  pm->NNZ_spec = ComputeNZSpec(pm->DAE_size, pm->spec, pm->NZ_spec);
+  memcpy(pm->spec, spec, pm->N * sizeof(*spec));
+  pm->NNZ_spec = ComputeNZSpec(pm->N, pm->spec, pm->NZ_spec);
   SUNCheckCall(ComputeDiffAliases(st, pm));
 
   return SUN_SUCCESS;

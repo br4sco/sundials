@@ -40,11 +40,11 @@ int main(int argc, char* argv[])
   TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &ctx) == SUN_SUCCESS);
 
   /* Allocate state and Jacobian data. */
-  SUNMatrix J0 = SUNDenseMatrix(st->DAE_size, st->DAE_size, ctx);
+  SUNMatrix J0 = SUNDenseMatrix(st->N, st->N, ctx);
   TEST_ASSERT(J0);
   DDMatrix dd_J0 = DDMatWrapDense(J0);
   TEST_ASSERT(dd_J0);
-  N_Vector Y = N_VNew_Serial(st->N, ctx);
+  N_Vector Y = N_VNew_Serial(st->N_all_orders, ctx);
   TEST_ASSERT(Y);
 
   /* Allocate forward forward-sensitivity arrays. */
@@ -91,7 +91,7 @@ int main(int argc, char* argv[])
   TEST_ASSERT(DDSetSensParams(dd_mem, data->param, pbar, NULL) == IDA_SUCCESS)
 
   /* Setup and set linear solver. */
-  SUNMatrix J = SUNDenseMatrix(st->N, st->N, ctx);
+  SUNMatrix J = SUNDenseMatrix(st->N_all_orders, st->N_all_orders, ctx);
   TEST_ASSERT(J);
   SUNLinearSolver LS = SUNLinSol_Dense(Y, J, ctx);
   TEST_ASSERT(LS);

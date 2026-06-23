@@ -11,27 +11,27 @@
 
 typedef struct
 {
-  sunindextype DAE_size;          /**< DAE size */
-  sunindextype DAE_backward_size; /**< Size of backwards DAE */
-  sunindextype M;                 /**< Number of equation symbols */
-  sunindextype N;                 /**< Number of variable symbols */
+  sunindextype N; /**< Number of variables and equations of the zero'th derivative order */
+  sunindextype N_backwards; /**< Number of variables and equations of the backwards DAE */
+  sunindextype M_all_orders; /**< Number of equations of all derivative orders */
+  sunindextype N_all_orders; /**< Number of variables of all derivative orders */
 
-  /** Equation offset vector of size `DAE_size` */
+  /** Equation offset vector of size `N_zeroth_order` */
   uint8_t* eqnofs;
 
-  /** Variable offset vector of size `DAE_size` */
+  /** Variable offset vector of size `N_zeroth_order` */
   uint8_t* varofs;
 
-  sunindextype** var_idx_map;     /**< Maps Var-diff-order to index */
-  sunindextype* var_idx_map_data; /**< `var_idx_map` data */
+  sunindextype** var_deriv_chains; /**< Maps Var-diff-order to index 0:(N_all_orders - 1) */
+  sunindextype* var_deriv_chains_flat; /**< `var_deriv_chains` as a flat array */
 
-  uint8_t K;             /**< Number of stages */
-  sunindextype* M_k;     /**< Number of equations at the k'th stage */
-  sunindextype* N_k;     /**< Number of variables at the k'th stage */
-  sunindextype** eqns_k; /**< Equations at the k'th stage */
-  sunindextype** vars_k; /**< Variables at the k'th stage */
-  sunindextype* eqns;    /**< Equations in all stages */
-  sunindextype* vars;    /**< Variables in all stages */
+  uint8_t K;                 /**< Number of stages */
+  sunindextype* M_k;         /**< Number of equations at the k'th stage */
+  sunindextype* N_k;         /**< Number of variables at the k'th stage */
+  sunindextype** eqns_k;     /**< Equations at the k'th stage */
+  sunindextype** vars_k;     /**< Variables at the k'th stage */
+  sunindextype* eqns_k_flat; /**< `eqns_k` as a flat array */
+  sunindextype* vars_k_flat; /**< `vars_k` as a flat array */
 
   const char** eqn_names; /**< Equation names */
   const char** var_names; /**< Variable names */
@@ -68,10 +68,10 @@ typedef _DAEStruct* DAEStruct;
  * ========================================================================== */
 
 /** @brief Creates DAE structure. */
-DAEStruct STCreate(sunindextype size,
-                   const uint8_t eqnofs[static size],
-                   const uint8_t varofs[static size],
-                   const sunindextype* var_idx_map[static size],
+DAEStruct STCreate(sunindextype N,
+                   const uint8_t eqnofs[static N],
+                   const uint8_t varofs[static N],
+                   const sunindextype* var_idx_map[static N],
                    const char** eqn_names,
                    const char** var_names);
 

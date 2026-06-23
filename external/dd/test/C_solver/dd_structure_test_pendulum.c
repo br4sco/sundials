@@ -17,8 +17,8 @@ int main(void)
 
   TEST_ASSERT(st != NULL);
 
-  TEST_ASSERT(st->DAE_size == 3);
-  TEST_ASSERT(st->DAE_backward_size == 5);
+  TEST_ASSERT(st->N == 3);
+  TEST_ASSERT(st->N_backwards == 5);
 
   TEST_ASSERT(st->eqnofs[0] == 0); /* f₁(x'', x, λ) */
   TEST_ASSERT(st->eqnofs[1] == 0); /* f₂(y'', y, λ) */
@@ -28,13 +28,13 @@ int main(void)
   TEST_ASSERT(st->varofs[1] == 2); /* y'' */
   TEST_ASSERT(st->varofs[2] == 0); /* λ */
 
-  TEST_ASSERT(st->var_idx_map[0][0] == 0);
-  TEST_ASSERT(st->var_idx_map[0][1] == 1);
-  TEST_ASSERT(st->var_idx_map[0][2] == 2);
-  TEST_ASSERT(st->var_idx_map[1][0] == 3);
-  TEST_ASSERT(st->var_idx_map[1][1] == 4);
-  TEST_ASSERT(st->var_idx_map[1][2] == 5);
-  TEST_ASSERT(st->var_idx_map[2][0] == 6);
+  TEST_ASSERT(st->var_deriv_chains[0][0] == 0);
+  TEST_ASSERT(st->var_deriv_chains[0][1] == 1);
+  TEST_ASSERT(st->var_deriv_chains[0][2] == 2);
+  TEST_ASSERT(st->var_deriv_chains[1][0] == 3);
+  TEST_ASSERT(st->var_deriv_chains[1][1] == 4);
+  TEST_ASSERT(st->var_deriv_chains[1][2] == 5);
+  TEST_ASSERT(st->var_deriv_chains[2][0] == 6);
 
   TEST_ASSERT(st->K == 3);
   TEST_ASSERT(ST_STAGE_FROM_INDEX(st, 0) == -2);

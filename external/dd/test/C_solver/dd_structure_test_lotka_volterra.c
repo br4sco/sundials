@@ -17,8 +17,8 @@ int main(void)
 
   TEST_ASSERT(st != NULL);
 
-  TEST_ASSERT(st->DAE_size == 2);
-  TEST_ASSERT(st->DAE_backward_size == 2);
+  TEST_ASSERT(st->N == 2);
+  TEST_ASSERT(st->N_backwards == 2);
 
   TEST_ASSERT(st->eqnofs[0] == 0); /* f₁(x', x, y) */
   TEST_ASSERT(st->eqnofs[1] == 0); /* f₂(y', x, y) */

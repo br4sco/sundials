@@ -22,11 +22,9 @@
  *  and less than `n`.
  * @return `true` if there was a next combination, otherwise `false`.
  */
-static inline bool dd_next_lexiographical_combination(
-  size_t n,
-  size_t k,
-  size_t comb[static k]
-)
+static inline bool dd_next_lexiographical_combination(size_t n,
+                                                      size_t k,
+                                                      size_t comb[static k])
 {
   /*
      * This code is adapted from

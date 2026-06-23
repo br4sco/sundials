@@ -43,11 +43,11 @@ int main(void)
    * ------------------------------------------------------------------------ */
 
   /* Allocate state and Jacobian data. */
-  SUNMatrix J0 = SUNDenseMatrix(st->DAE_size, st->DAE_size, ctx);
+  SUNMatrix J0 = SUNDenseMatrix(st->N, st->N, ctx);
   TEST_ASSERT(J0);
   DDMatrix dd_J0 = DDMatWrapDense(J0);
   TEST_ASSERT(dd_J0);
-  N_Vector Y = N_VNew_Serial(st->N, ctx);
+  N_Vector Y = N_VNew_Serial(st->N_all_orders, ctx);
   TEST_ASSERT(Y);
 
   /* Set DAE parameters. */
@@ -83,7 +83,7 @@ int main(void)
   );
 
   /* Setup and set linear solver. */
-  SUNMatrix J = SUNDenseMatrix(st->N, st->N, ctx);
+  SUNMatrix J = SUNDenseMatrix(st->N_all_orders, st->N_all_orders, ctx);
   TEST_ASSERT(J);
   SUNLinearSolver LS = SUNLinSol_Dense(Y, J, ctx);
   TEST_ASSERT(LS);
@@ -128,7 +128,7 @@ int main(void)
    * ------------------------------------------------------------------------ */
 
   /* Allocate state and set initial values */
-  N_Vector yyB = N_VNew_Serial(st->DAE_backward_size, ctx);
+  N_Vector yyB = N_VNew_Serial(st->N_backwards, ctx);
   TEST_ASSERT(yyB);
 
   N_Vector ypB = N_VClone(yyB);
@@ -149,7 +149,7 @@ int main(void)
 
   TEST_ASSERT(DDSetUserDataB(dd_mem, indexB, data) == IDA_SUCCESS);
 
-  SUNMatrix AB = SUNDenseMatrix(st->DAE_backward_size, st->DAE_backward_size, ctx);
+  SUNMatrix AB = SUNDenseMatrix(st->N_backwards, st->N_backwards, ctx);
   TEST_ASSERT(AB);
   SUNLinearSolver LSB = SUNLinSol_Dense(yyB, AB, ctx);
   TEST_ASSERT(LSB);

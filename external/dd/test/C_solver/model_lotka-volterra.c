@@ -45,14 +45,14 @@ int main(int argc, char* argv[])
 
   TEST_ASSERT(st);
 
-  const sunindextype N = st->N;
+  const sunindextype N = st->N_all_orders;
 
   /* Setup Sundials context. */
   SUNContext sunctx;
   TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &sunctx) == SUN_SUCCESS);
 
   /* Allocate state and Jacobian data. */
-  SUNMatrix J0 = SUNDenseMatrix(st->DAE_size, st->DAE_size, sunctx);
+  SUNMatrix J0 = SUNDenseMatrix(st->N, st->N, sunctx);
   TEST_ASSERT(J0);
 
   DDMatrix dd_J0 = DDMatWrapDense(J0);
