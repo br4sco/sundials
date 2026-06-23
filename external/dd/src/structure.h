@@ -9,20 +9,6 @@
  * Types
  * ========================================================================== */
 
-/** @brief Sparese CSR representation if Sigma matrix, where columns enumerate
-    variables and rows enumerate equations. A stored zero at (i,j) means that a
-    variable j has differentiation order zero in the equation i, while if (i,j)
-    is not stored in this sparse matrix it means the variable j does not appear
-    in equation i. */
-typedef struct
-{
-  sunindextype N;           /** Matrix size (we assume a square matrix). */
-  sunindextype NNZ;         /** Number of non-zero elements. */
-  sunindextype* colindices; /** Pointers to non-zero column indices. */
-  uint8_t** rowindexptrs;   /** Pointers to the first element in each row. */
-  uint8_t* data;            /** Non-zero values. */
-} SigmaMatrix;
-
 typedef struct
 {
   sunindextype DAE_size;          /**< DAE size */
@@ -82,14 +68,12 @@ typedef _DAEStruct* DAEStruct;
  * ========================================================================== */
 
 /** @brief Creates DAE structure. */
-DAEStruct STCreate(
-  sunindextype size,
-  const uint8_t eqnofs[static size],
-  const uint8_t varofs[static size],
-  const sunindextype* var_idx_map[static size],
-  const char** eqn_names,
-  const char** var_names
-);
+DAEStruct STCreate(sunindextype size,
+                   const uint8_t eqnofs[static size],
+                   const uint8_t varofs[static size],
+                   const sunindextype* var_idx_map[static size],
+                   const char** eqn_names,
+                   const char** var_names);
 
 /** @brief Destroys DAE structure. */
 void STDestroy(DAEStruct);
