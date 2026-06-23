@@ -26,7 +26,6 @@ typedef struct
 
   sunindextype DAE_size;    /**< DAE size */
   sunindextype N_diff_vars; /**< Number of diff equations in first-order DAE */
-  sunindextype* diff_vars;  /**< Diff variables in first-order DAE */
 
   /** Defines differential variable aliases. That is:
       `d/dt Y[diff_var_aliases[j].fst] = Y[diff_var_aliases[j].snd]`. */

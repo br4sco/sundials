@@ -26,8 +26,6 @@ PivMem PIVCreate(SUNContext sunctx, DAEStruct st, DDMatrix A)
   pm->DAE_size = dae_size;
 
   pm->N_diff_vars = st->N - st->M;
-  pm->diff_vars   = malloc(pm->N_diff_vars * sizeof(*pm->diff_vars));
-  SUNAssertNull(pm->diff_vars, SUN_ERR_MALLOC_FAIL);
   pm->diff_var_aliases = malloc(pm->N_diff_vars * sizeof(*pm->diff_var_aliases));
   SUNAssertNull(pm->diff_var_aliases, SUN_ERR_MALLOC_FAIL);
   pm->yy_diff_alias_row = malloc(st->N * sizeof(*pm->yy_diff_alias_row));
@@ -99,12 +97,6 @@ PivMem PIVCreate(SUNContext sunctx, DAEStruct st, DDMatrix A)
 void PIVDestroy(PivMem pm)
 {
   if (pm == NULL) { return; }
-
-  if (pm->diff_vars != NULL)
-  {
-    free(pm->diff_vars);
-    pm->diff_vars = NULL;
-  }
 
   if (pm->diff_var_aliases != NULL)
   {
@@ -203,7 +195,8 @@ void PIVPrint(DAEStruct st, PivMem pm, FILE* file)
     for (sunindextype n = 0; n < st->N_k[k]; ++n)
     {
       const sunindextype j = st->vars_k[k][n];
-      fprintf(file, "\t[%ld]%s^(%d)\t%s\n", j, ST_VAR_NAME(st, j), ST_VAR_ORDER(st, k, j), pm->known_k[k][j] ? "true" : "false");
+      fprintf(file, "\t[%ld]%s^(%d)\t%s\n", j, ST_VAR_NAME(st, j),
+              ST_VAR_ORDER(st, k, j), pm->known_k[k][j] ? "true" : "false");
     }
   }
   fprintf(file, "--- END PIVOTDATA ------\n");
@@ -303,7 +296,9 @@ SUNErrCode PIVPivot(DAEStruct st, DDMatrix A, sunrealtype tol, PivMem pm)
       }
     }
 
-    SUNAssert(m == M && "Unable to find the required number of known variables for this stage", SUN_ERR_OP_FAIL);
+    SUNAssert(m == M && "Unable to find the required number of known variables "
+                        "for this stage",
+              SUN_ERR_OP_FAIL);
   }
 
   return SUN_SUCCESS;
@@ -322,11 +317,9 @@ SUNErrCode PIVPivot(DAEStruct st, DDMatrix A, sunrealtype tol, PivMem pm)
 /*   if (SUNMatGetID(mat) == SUNMATRIX_DENSE) { SUNDenseMatrix_Print(mat, file); } */
 /* } */
 
-static sunindextype ComputeNZSpec(
-  sunindextype N,
-  const uint8_t spec[N],
-  sunindextype* NZ_spec
-)
+static sunindextype ComputeNZSpec(sunindextype N,
+                                  const uint8_t spec[N],
+                                  sunindextype* NZ_spec)
 {
   sunindextype len = 0;
   for (sunindextype i = 0; i < N; ++i)
