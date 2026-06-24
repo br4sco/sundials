@@ -40,9 +40,8 @@ const char* DDGetErrMsg(int);
 #define DDHandleErrWithMsgAndCtx(msg, code, sunctx) \
   SUNHandleErrWithMsg(__LINE__, __func__, __FILE__, msg, code, sunctx)
 
-#define DDHandleErrWithFmtMsgAndCtx(msg, code, sunctx, ...)               \
-  SUNHandleErrWithFmtMsg(__LINE__, __func__, __FILE__, msg, code, sunctx, \
-                         __VA_ARGS__)
+#define DDHandleErrWithFmtMsgAndCtx(msg, code, sunctx, ...) \
+  SUNHandleErrWithFmtMsg(__LINE__, __func__, __FILE__, msg, code, sunctx, __VA_ARGS__)
 
 #define DDHandleErrWithCtx(code, sunctx) \
   DDHandleErrWithMsgAndCtx(DDGetErrMsg(code), code, sunctx)
@@ -56,16 +55,21 @@ const char* DDGetErrMsg(int);
 #define DDHandleErr(code) DDHandleErrWithCtx(code, SUNCTX_)
 
 #if defined(SUNDIALS_ENABLE_ERROR_CHECKS)
-#define DDAssertWithCtx(expr, code, sunctx)                               \
-  do                                                                      \
-  {                                                                       \
-    if (SUNHintFalse(!(expr)))                                            \
-    {                                                                     \
-      SUNHandleErrWithFmtMsg(__LINE__, __func__, __FILE__, "expected %s", \
-                             code, sunctx, #expr);                        \
-      return code;                                                        \
-    }                                                                     \
-  }                                                                       \
+#define DDAssertWithCtx(expr, code, sunctx) \
+  do                                        \
+  {                                         \
+    if (SUNHintFalse(!(expr)))              \
+    {                                       \
+      SUNHandleErrWithFmtMsg(__LINE__,      \
+                             __func__,      \
+                             __FILE__,      \
+                             "expected %s", \
+                             code,          \
+                             sunctx,        \
+                             #expr);        \
+      return code;                          \
+    }                                       \
+  }                                         \
   while (0)
 #else
 #define DDAssertWithCtx(expr, code, sunctx)

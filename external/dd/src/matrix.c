@@ -46,7 +46,9 @@ void DDMatWSDestroy(DDMatrixWorkspace self)
  * ========================================================================== */
 
 static void DDMatWSContentDestroy_Dense(SUNDIALS_MAYBE_UNUSED DDMatrixWorkspace ws)
-{ return; }
+{
+  return;
+}
 
 static DDMatrixWorkspace DDMatCreateWS_Dense(DDMatrix self)
 {
@@ -143,8 +145,8 @@ SUNErrCode DDMatPivot_Dense(DDMatrix self,
         SM_ELEMENT_D(sm_self, r[i], c[k]) = SUN_RCONST(0.0);
         for (sunindextype j = k + 1; j < n; ++j)
         {
-          SM_ELEMENT_D(sm_self, r[i],
-                       c[j]) -= scaleval * SM_ELEMENT_D(sm_self, r[k], c[j]);
+          SM_ELEMENT_D(sm_self, r[i], c[j]) -= scaleval *
+                                               SM_ELEMENT_D(sm_self, r[k], c[j]);
         }
       }
     }

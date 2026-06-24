@@ -32,6 +32,114 @@
 #define ONE                      SUN_RCONST(1.0)
 
 /* --------------------------------------------------------------------------
+ * DD State Memory
+ * -------------------------------------------------------------------------- */
+
+struct DDstateMemRec
+{
+  Pair_sunindextype* diff_var_aliases;
+  sunindextype* yy_diff_alias_row;
+  sunindextype* yp_diff_alias_row;
+};
+
+typedef struct DDstateMemRec* DDstateMem;
+
+static void DDstateDestroy(DDstateMem* state_ptr)
+{
+  if (state_ptr == NULL || *state_ptr == NULL) { return; }
+
+  DDstateMem state = *state_ptr;
+  free(state->diff_var_aliases);
+  free(state->yy_diff_alias_row);
+  free(state->yp_diff_alias_row);
+  free(state);
+
+  *state_ptr = NULL;
+}
+
+static DDstateMem DDstateCreate(DAEStruct st)
+{
+  DDstateMem state = calloc(1, sizeof(*state));
+  if (state == NULL) { return NULL; }
+
+  state->diff_var_aliases = malloc(st->N_diff * sizeof(*state->diff_var_aliases));
+  if (state->diff_var_aliases == NULL) { goto fail; }
+
+  state->yy_diff_alias_row =
+    malloc(st->N_all_orders * sizeof(*state->yy_diff_alias_row));
+  if (state->yy_diff_alias_row == NULL) { goto fail; }
+
+  state->yp_diff_alias_row =
+    malloc(st->N_all_orders * sizeof(*state->yp_diff_alias_row));
+  if (state->yp_diff_alias_row == NULL) { goto fail; }
+
+  return state;
+
+fail:
+  DDstateDestroy(&state);
+  return NULL;
+}
+
+static DDstateMem DDstateClone(DAEStruct st, DDstateMem state)
+{
+  DDstateMem new_state = DDstateCreate(st);
+  if (new_state == NULL) { return NULL; }
+
+  memcpy(new_state->diff_var_aliases,
+         state->diff_var_aliases,
+         st->N_diff * sizeof(*new_state->diff_var_aliases));
+
+  memcpy(new_state->yy_diff_alias_row,
+         state->yy_diff_alias_row,
+         st->N_all_orders * sizeof(*state->yy_diff_alias_row));
+
+  memcpy(new_state->yp_diff_alias_row,
+         state->yy_diff_alias_row,
+         st->N_all_orders * sizeof(*state->yp_diff_alias_row));
+
+  return new_state;
+}
+
+static void DDstateUpdate(DAEStruct st, uint8_t* spec, DDstateMem state_mem)
+
+{
+  memset(state_mem->yy_diff_alias_row,
+         -1,
+         st->N_all_orders * sizeof(*state_mem->yy_diff_alias_row));
+  memset(state_mem->yp_diff_alias_row,
+         -1,
+         st->N_all_orders * sizeof(*state_mem->yp_diff_alias_row));
+
+  sunindextype ofs = 0;
+  for (sunindextype i = 0; i < st->N; ++i)
+  {
+    const uint8_t d = spec[i];
+
+    for (uint8_t j = 0; j < d; ++j)
+    {
+      assert(ofs < st->N_diff);
+
+      sunindextype yy_idx = st->var_deriv_chains[i][j],
+                   yp_idx = st->var_deriv_chains[i][j + 1];
+
+      assert(0 <= yy_idx && yy_idx < st->N_all_orders);
+      assert(0 <= yp_idx && yp_idx < st->N_all_orders);
+
+      state_mem->diff_var_aliases[ofs] = (Pair_sunindextype){
+        .fst = yy_idx,
+        .snd = yp_idx,
+      };
+
+      sunindextype eqn                     = ofs + st->M_all_orders;
+      state_mem->yy_diff_alias_row[yy_idx] = eqn;
+      state_mem->yp_diff_alias_row[yp_idx] = eqn;
+
+      ofs++;
+    }
+  }
+}
+
+/* --------------------------------------------------------------------------
  * DD Checkpoints
  * -------------------------------------------------------------------------- */
 
@@ -40,7 +148,7 @@ struct DDckpntMemRec
   sunrealtype ck_t0;
   sunrealtype ck_t1;
   sunrealtype ck_h0u;
-  uint8_t* ck_spec;
+  DDstateMem ck_state;
   IDAckpntMem ida_ck_mem;
   struct DDckpntMemRec* ck_next;
 };
@@ -49,43 +157,32 @@ typedef struct DDckpntMemRec* DDckpntMem;
 
 static void DDckpntDestroy(DDckpntMem* ck_mem_ptr)
 {
+  if (ck_mem_ptr == NULL || *ck_mem_ptr == NULL) { return; }
+
   DDckpntMem ck = *ck_mem_ptr;
-  if (ck != NULL)
-  {
-    if (ck->ck_spec != NULL)
-    {
-      free(ck->ck_spec);
-      ck->ck_spec = NULL;
-    }
+  DDstateDestroy(&ck->ck_state);
 
-    /* NOTE(oerikss, 2025-04-15): We delegate deleting IDA checkpoints to
-         `IDAAdjFree` in `DDAdjFree`. */
+  /* NOTE(oerikss, 2025-04-15): We delegate deleting IDA checkpoints to
+       `IDAAdjFree` in `DDAdjFree`. */
 
-    free(ck);
-    *ck_mem_ptr = NULL;
-  }
+  free(ck);
+  *ck_mem_ptr = NULL;
 }
 
-static DDckpntMem DDckpntCreate(sunrealtype t,
-                                sunindextype speclen,
-                                const uint8_t spec[static speclen])
+static DDckpntMem DDckpntCreate(DAEStruct st, sunrealtype t, DDstateMem state)
 {
-  DDckpntMem ck_mem = malloc(sizeof(*ck_mem));
+  DDckpntMem ck_mem = calloc(1, sizeof(*ck_mem));
   if (ck_mem == NULL) { return NULL; }
 
-  sunindextype size = speclen * sizeof(uint8_t);
-  ck_mem->ck_spec   = malloc(size);
-  if (ck_mem->ck_spec == NULL)
+  ck_mem->ck_state = DDstateClone(st, state);
+  if (ck_mem->ck_state == NULL)
   {
-    free(ck_mem);
+    DDckpntDestroy(&ck_mem);
     return NULL;
   }
-  memcpy(ck_mem->ck_spec, spec, size);
 
-  ck_mem->ck_t0      = t;
-  ck_mem->ck_t1      = t;
-  ck_mem->ida_ck_mem = NULL;
-  ck_mem->ck_next    = NULL;
+  ck_mem->ck_t0 = t;
+  ck_mem->ck_t1 = t;
 
   return ck_mem;
 }
@@ -130,6 +227,10 @@ struct DDMemRec
   DDJacFn0* dd_jacf0;
   DDMatrix dd_J0;
   SUNMatrix dd_J;
+
+  /* Dynamic State */
+
+  DDstateMem dd_state;
 
   /* IDA Memory */
 
@@ -219,8 +320,8 @@ static int DDResBWrapper(sunrealtype,
                          N_Vector,
                          N_Vector,
                          void*);
-static void DDSetYpFromY(PivMem, N_Vector, N_Vector);
-static void DDSetId(PivMem, N_Vector);
+static void DDSetYpFromY(DAEStruct, DDstateMem, N_Vector, N_Vector);
+static void DDSetId(DAEStruct, DDstateMem, N_Vector);
 static void DDAdjCleanup(DDMem dd_mem);
 static void DDSensCleanup(DDMem dd_mem);
 
@@ -303,7 +404,7 @@ DDMem DDCreate(SUNContext sunctx)
 {
   SUNFunctionBegin(sunctx);
 
-  DDMem dd_mem = malloc(sizeof(*dd_mem));
+  DDMem dd_mem = calloc(1, sizeof(*dd_mem));
   if (dd_mem == NULL)
   {
     DDHandleErr(SUN_ERR_MEM_FAIL);
@@ -320,30 +421,6 @@ DDMem DDCreate(SUNContext sunctx)
 
   dd_mem->sunctx = sunctx;
 
-  dd_mem->dd_st        = NULL;
-  dd_mem->dd_pm        = NULL;
-  dd_mem->dd_pivot_tol = ZERO;
-  dd_mem->dd_prev_spec = NULL;
-  dd_mem->dd_jacf0     = NULL;
-  dd_mem->dd_J0        = NULL;
-  dd_mem->dd_J         = NULL;
-
-  dd_mem->dd_res       = NULL;
-  dd_mem->dd_jacfn1    = NULL;
-  dd_mem->dd_jacfn2    = NULL;
-  dd_mem->dd_yp        = NULL;
-  dd_mem->dd_yp        = NULL;
-  dd_mem->dd_id        = NULL;
-  dd_mem->dd_user_data = NULL;
-
-  dd_mem->dd_yyS  = NULL;
-  dd_mem->dd_ypS  = NULL;
-  dd_mem->dd_resS = NULL;
-
-  dd_mem->dd_probBs  = NULL;
-  dd_mem->ck_mem     = NULL;
-  dd_mem->ck_mem_cur = NULL;
-
   return dd_mem;
 }
 
@@ -353,26 +430,15 @@ DDMem DDCreate(SUNContext sunctx)
 
 void DDFree(DDMem* dd_mem_ptr)
 {
-  if (dd_mem_ptr == NULL) { return; }
+  if (dd_mem_ptr == NULL || *dd_mem_ptr == NULL) { return; }
 
   DDMem dd_mem = *dd_mem_ptr;
-  if (dd_mem == NULL) { return; }
 
   DDSensCleanup(dd_mem);
-
   DDAdjCleanup(dd_mem);
-
-  if (dd_mem->dd_pm != NULL)
-  {
-    PIVDestroy(dd_mem->dd_pm);
-    dd_mem->dd_pm = NULL;
-  }
-
-  if (dd_mem->dd_prev_spec != NULL)
-  {
-    free(dd_mem->dd_prev_spec);
-    dd_mem->dd_prev_spec = NULL;
-  }
+  PIVDestroy(&dd_mem->dd_pm);
+  DDstateDestroy(&dd_mem->dd_state);
+  free(dd_mem->dd_prev_spec);
 
   if (dd_mem->ida_mem != NULL)
   {
@@ -380,23 +446,9 @@ void DDFree(DDMem* dd_mem_ptr)
     dd_mem->ida_mem = NULL;
   }
 
-  if (dd_mem->dd_yy != NULL)
-  {
-    N_VDestroy(dd_mem->dd_yy);
-    dd_mem->dd_yy = NULL;
-  }
-
-  if (dd_mem->dd_yp != NULL)
-  {
-    N_VDestroy(dd_mem->dd_yp);
-    dd_mem->dd_yp = NULL;
-  }
-
-  if (dd_mem->dd_id != NULL)
-  {
-    N_VDestroy(dd_mem->dd_id);
-    dd_mem->dd_id = NULL;
-  }
+  N_VDestroy(dd_mem->dd_yy);
+  N_VDestroy(dd_mem->dd_yp);
+  N_VDestroy(dd_mem->dd_id);
 
   free(dd_mem);
 
@@ -450,6 +502,14 @@ int DDInit(DDMem dd_mem,
   }
   dd_mem->dd_pm = pm;
 
+  DDstateMem state = DDstateCreate(st);
+  if (state == NULL)
+  {
+    DDHandleErr(SUN_ERR_MEM_FAIL);
+    return SUN_ERR_MEM_FAIL;
+  }
+  dd_mem->dd_state = state;
+
   uint8_t* prev_spec = malloc(st->N * sizeof(*dd_mem->dd_prev_spec));
   if (prev_spec == NULL)
   {
@@ -470,6 +530,8 @@ int DDInit(DDMem dd_mem,
 
   memcpy(prev_spec, pm->spec, st->N * sizeof(*prev_spec));
 
+  DDstateUpdate(st, pm->spec, dd_mem->dd_state);
+
   dd_mem->dd_yy = N_VClone(Y0);
   dd_mem->dd_yp = N_VClone(Y0);
   if ((dd_mem->dd_yy == NULL) || (dd_mem->dd_yp == NULL))
@@ -477,7 +539,7 @@ int DDInit(DDMem dd_mem,
     DDHandleErr(SUN_ERR_MEM_FAIL);
     return SUN_ERR_MEM_FAIL;
   }
-  DDSetYpFromY(pm, Y0, dd_mem->dd_yp);
+  DDSetYpFromY(dd_mem->dd_st, state, Y0, dd_mem->dd_yp);
 
   dd_mem->dd_id = N_VClone(Y0);
   if (dd_mem->dd_id == NULL)
@@ -485,7 +547,7 @@ int DDInit(DDMem dd_mem,
     DDHandleErr(SUN_ERR_MEM_FAIL);
     return SUN_ERR_MEM_FAIL;
   }
-  DDSetId(pm, dd_mem->dd_id);
+  DDSetId(st, state, dd_mem->dd_id);
 
   if (IDAInit(dd_mem->ida_mem, DDResWrapper, t0, Y0, dd_mem->dd_yp) < 0)
   {
@@ -509,12 +571,13 @@ static int DDResWrapper(sunrealtype t,
                         N_Vector rr,
                         void* user_data)
 {
-  const DDMem dd_mem = (DDMem)user_data;
-  const PivMem pm    = dd_mem->dd_pm;
+  const DDMem dd_mem     = (DDMem)user_data;
+  const DAEStruct st     = dd_mem->dd_st;
+  const DDstateMem state = dd_mem->dd_state;
 
   /* Evaluate differential equations residual. */
 
-  const sunindextype N_diff = pm->N_diff;
+  const sunindextype N_diff = st->N_diff;
   const sunindextype rr_ofs = N_VGetLength(rr) - N_diff;
 
   const sunrealtype *yy_arr = N_VGetArrayPointer(yy),
@@ -523,7 +586,7 @@ static int DDResWrapper(sunrealtype t,
   sunrealtype* rr_arr = N_VGetArrayPointer(rr);
   for (sunindextype i = 0; i < N_diff; ++i)
   {
-    const Pair_sunindextype p = pm->diff_var_aliases[i];
+    const Pair_sunindextype p = state->diff_var_aliases[i];
     rr_arr[rr_ofs + i]        = yy_arr[p.snd] - yp_arr[p.fst];
   }
 
@@ -534,26 +597,26 @@ static int DDResWrapper(sunrealtype t,
   return flag;
 }
 
-static void DDSetYpFromY(PivMem pm, N_Vector yy, N_Vector yp)
+static void DDSetYpFromY(DAEStruct st, DDstateMem state, N_Vector yy, N_Vector yp)
 {
   N_VConst(ZERO, yp);
   const sunrealtype* yy_arr = N_VGetArrayPointer(yy);
   sunrealtype* yp_arr       = N_VGetArrayPointer(yp);
 
-  for (sunindextype i = 0; i < pm->N_diff; ++i)
+  for (sunindextype i = 0; i < st->N_diff; ++i)
   {
-    const Pair_sunindextype p = pm->diff_var_aliases[i];
+    const Pair_sunindextype p = state->diff_var_aliases[i];
     yp_arr[p.fst]             = yy_arr[p.snd];
   }
 }
 
-static void DDSetId(PivMem pm, N_Vector id)
+static void DDSetId(DAEStruct st, DDstateMem state, N_Vector id)
 {
   N_VConst(ZERO, id);
   sunrealtype* id_arr = N_VGetArrayPointer(id);
-  for (sunindextype i = 0; i < pm->N_diff; ++i)
+  for (sunindextype i = 0; i < st->N_diff; ++i)
   {
-    const Pair_sunindextype p = pm->diff_var_aliases[i];
+    const Pair_sunindextype p = state->diff_var_aliases[i];
     id_arr[p.fst]             = ONE;
   }
 }
@@ -572,7 +635,7 @@ int DDReInit(DDMem dd_mem, sunrealtype t0, N_Vector Y0)
 
   SUNFunctionBegin(dd_mem->sunctx);
 
-  DDSetYpFromY(dd_mem->dd_pm, Y0, dd_mem->dd_yp);
+  DDSetYpFromY(dd_mem->dd_st, dd_mem->dd_state, Y0, dd_mem->dd_yp);
 
   if (IDAReInit(dd_mem->ida_mem, t0, Y0, dd_mem->dd_yp) < 0)
   {
@@ -679,9 +742,11 @@ PivotResult DDPivot(DDMem dd_mem)
 
   if (changed)
   {
+    DDstateUpdate(st, pm->spec, dd_mem->dd_state);
+
     N_Vector id = dd_mem->dd_id;
 
-    DDSetId(pm, id);
+    DDSetId(st, dd_mem->dd_state, id);
 
     if (IDASetId(ida_mem, id) < 0)
     {
@@ -689,7 +754,7 @@ PivotResult DDPivot(DDMem dd_mem)
       return PIVOT_FAIL;
     }
 
-    DDSetYpFromY(pm, yy, yp);
+    DDSetYpFromY(st, dd_mem->dd_state, yy, yp);
 
     if (IDAReInit(ida_mem, tn, yy, yp) < 0)
     {
@@ -709,7 +774,7 @@ PivotResult DDPivot(DDMem dd_mem)
 
       for (int i = 0; i < ida_mem->ida_Ns; ++i)
       {
-        DDSetYpFromY(pm, yyS[i], ypS[i]);
+        DDSetYpFromY(st, dd_mem->dd_state, yyS[i], ypS[i]);
       }
 
       if (IDASensReInit(ida_mem, ida_mem->ida_ism, yyS, ypS) < 0)
@@ -727,7 +792,7 @@ PivotResult DDPivot(DDMem dd_mem)
       ck_next->ck_t1      = tn;
       ck_next->ida_ck_mem = ida_adj_mem->ck_mem;
 
-      DDckpntMem ck_mem = DDckpntCreate(tn, pm->N, pm->spec);
+      DDckpntMem ck_mem = DDckpntCreate(st, tn, dd_mem->dd_state);
       if (ck_mem == NULL)
       {
         DDHandleErr(SUN_ERR_MEM_FAIL);
@@ -843,10 +908,13 @@ int DDSensInit(DDMem dd_mem,
   }
   dd_mem->dd_ypS = ypS;
 
-  for (int i = 0; i < Ns; ++i) { DDSetYpFromY(dd_mem->dd_pm, YS0[i], ypS[i]); }
+  for (int i = 0; i < Ns; ++i)
+  {
+    DDSetYpFromY(dd_mem->dd_st, dd_mem->dd_state, YS0[i], ypS[i]);
+  }
 
-  if (IDASensInit(dd_mem->ida_mem, Ns, ism, resfnS ? DDResSWrapper : NULL, YS0,
-                  ypS) < 0)
+  if (IDASensInit(dd_mem->ida_mem, Ns, ism, resfnS ? DDResSWrapper : NULL, YS0, ypS) <
+      0)
   {
     DDHandleErr(DD_ERR_IDA_ERR);
     return DD_ERR_IDA_ERR;
@@ -870,15 +938,13 @@ static int DDResSWrapper(int Ns,
                          N_Vector tmp2,
                          N_Vector tmp3)
 {
-  const DDMem dd_mem = (DDMem)user_data;
-
-  DDAssertWithCtx(dd_mem != NULL, SUN_ERR_ARG_CORRUPT, NULL);
-
-  const PivMem pm = dd_mem->dd_pm;
+  const DDMem dd_mem     = (DDMem)user_data;
+  const DAEStruct st     = dd_mem->dd_st;
+  const DDstateMem state = dd_mem->dd_state;
 
   /* Compute sensitivites of differential residuals. */
 
-  const sunindextype N_diff = pm->N_diff;
+  const sunindextype N_diff = st->N_diff;
   const sunindextype rr_ofs = N_VGetLength(rrS[0]) - N_diff;
   for (int i = 0; i < Ns; ++i)
   {
@@ -888,15 +954,15 @@ static int DDResSWrapper(int Ns,
     sunrealtype* rrS_arr = N_VGetArrayPointer(rrS[i]);
     for (sunindextype j = 0; j < N_diff; ++j)
     {
-      const Pair_sunindextype p = pm->diff_var_aliases[j];
+      const Pair_sunindextype p = state->diff_var_aliases[j];
       rrS_arr[rr_ofs + j]       = yyS_arr[p.snd] - ypS_arr[p.fst];
     }
   }
 
   /* Evaluate user supplied sensitivity residual function. */
 
-  const int flag = dd_mem->dd_resS(Ns, t, yy, rr, yyS, rrS,
-                                   dd_mem->dd_user_data, tmp1, tmp2, tmp3);
+  const int flag =
+    dd_mem->dd_resS(Ns, t, yy, rr, yyS, rrS, dd_mem->dd_user_data, tmp1, tmp2, tmp3);
 
   return flag;
 }
@@ -926,7 +992,7 @@ int DDSensReInit(DDMem dd_mem, int ism, N_Vector* YS0)
 
   for (int i = 0; i < ida_mem->ida_Ns; ++i)
   {
-    DDSetYpFromY(dd_mem->dd_pm, YS0[i], ypS[i]);
+    DDSetYpFromY(dd_mem->dd_st, dd_mem->dd_state, YS0[i], ypS[i]);
   }
 
   if (IDASensReInit(ida_mem, ism, YS0, ypS) < 0)
@@ -1038,9 +1104,7 @@ int DDAdjInit(DDMem dd_mem, long Nd, int interpType)
     return SUN_ERR_MEM_FAIL;
   }
 
-  PivMem pm = dd_mem->dd_pm;
-
-  dd_mem->ck_mem = DDckpntCreate(dd_mem->dd_t0, pm->N, pm->spec);
+  dd_mem->ck_mem = DDckpntCreate(dd_mem->dd_st, dd_mem->dd_t0, dd_mem->dd_state);
   if (dd_mem->ck_mem == NULL)
   {
     DDHandleErr(SUN_ERR_MEM_FAIL);
@@ -1112,7 +1176,13 @@ static void DDAdjCleanup(DDMem dd_mem)
     }
   }
 
-  DDckpntDestroy(&dd_mem->ck_mem);
+  DDckpntMem ck_mem = dd_mem->ck_mem;
+  while (ck_mem != NULL)
+  {
+    DDckpntMem ck_mem_next = ck_mem->ck_next;
+    DDckpntDestroy(&ck_mem);
+    ck_mem = ck_mem_next;
+  }
 
   dd_mem->ck_mem_cur = NULL;
 }
@@ -1251,8 +1321,6 @@ static int DDResBWrapper(sunrealtype t,
 {
   DataB* data = (DataB*)user_dataB;
 
-  DDAssertWithCtx(data != NULL, SUN_ERR_ARG_CORRUPT, NULL);
-
   /* Evaluate user supplied residual function. */
   return data->db_resB(t, yy, yyB, ypB, rrB, data->db_user_data);
 }
@@ -1330,15 +1398,15 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
 
   while (SUNTRUE)
   {
-    /* If we found a new checkpoint we need to update the pivot spec. */
+    /* If we found a new checkpoint we need to update the state. */
 
     if (ck_mem != dd_mem->ck_mem_cur)
     {
-      if (PIVUpdateDDSpec(dd_mem->dd_st, ck_mem->ck_spec, dd_mem->dd_pm) < 0)
-      {
-        DDHandleErr(SUN_ERR_OP_FAIL);
-        return SUN_ERR_OP_FAIL;
-      }
+      DDstateMem state = ck_mem->ck_state;
+      ck_mem->ck_state =
+        dd_mem->dd_state; /* this state will be destroyed when we destroy the
+        checkpoints. */
+      dd_mem->dd_state = state;
 
       /* Set the initial time step for the IDA solver becase it is resetted on
        each call to `IDASolve` after a call to `IDAReInit`. This field is used
@@ -1418,7 +1486,10 @@ int DDCalcICB(DDMem dd_mem, int which, sunrealtype tBout1, N_Vector Y)
     return SUN_ERR_ARG_CORRUPT;
   }
 
-  if (IDACalcICB(dd_mem->ida_mem, which, tBout1, Y,
+  if (IDACalcICB(dd_mem->ida_mem,
+                 which,
+                 tBout1,
+                 Y,
                  /* Not used by the residual function. */ Y) < 0)
   {
     DDHandleErr(DD_ERR_IDA_ERR);
@@ -1513,18 +1584,19 @@ static int DDLsJacFnWrapper1_Dense(sunrealtype t,
                                    N_Vector tmp2,
                                    N_Vector tmp3)
 {
-  const DDMem dd_mem = (DDMem)user_data;
-  const PivMem pm    = dd_mem->dd_pm;
+  const DDMem dd_mem     = (DDMem)user_data;
+  const DAEStruct st     = dd_mem->dd_st;
+  const DDstateMem state = dd_mem->dd_state;
 
   /* Compute lower part of the Jacobian containing rows for the differential
      equations. */
 
-  const sunindextype N_diff  = pm->N_diff;
+  const sunindextype N_diff  = st->N_diff;
   const sunindextype row_ofs = SM_ROWS_D(J) - N_diff;
 
   for (sunindextype i = 0; i < N_diff; ++i)
   {
-    const Pair_sunindextype p           = pm->diff_var_aliases[i];
+    const Pair_sunindextype p           = state->diff_var_aliases[i];
     SM_ELEMENT_D(J, row_ofs + i, p.fst) = -cj;
     SM_ELEMENT_D(J, row_ofs + i, p.snd) = ONE;
   }
@@ -1548,18 +1620,19 @@ static int DDLsJacFnWrapper1_CSR(sunrealtype t,
                                  N_Vector tmp2,
                                  N_Vector tmp3)
 {
-  const DDMem dd_mem = (DDMem)user_data;
-  const PivMem pm    = dd_mem->dd_pm;
+  const DDMem dd_mem     = (DDMem)user_data;
+  const DAEStruct st     = dd_mem->dd_st;
+  const DDstateMem state = dd_mem->dd_state;
 
   /* Compute lower part of the Jacobian containing rows for the differential
      equations. */
 
-  const sunindextype N_diff = pm->N_diff;
+  const sunindextype N_diff = st->N_diff;
 
   sunindextype row = SM_ROWS_S(J) - N_diff, nnz = SM_NNZ_S(J) - 2 * N_diff;
   for (sunindextype i = 0; i < N_diff; ++i)
   {
-    const Pair_sunindextype p  = pm->diff_var_aliases[i];
+    const Pair_sunindextype p  = state->diff_var_aliases[i];
     SM_INDEXVALS_S(J)[nnz]     = p.fst;
     SM_DATA_S(J)[nnz]          = -cj;
     SM_INDEXVALS_S(J)[nnz + 1] = p.snd;
@@ -1591,14 +1664,23 @@ static int DDLsJacFnWrapper2(sunrealtype t,
                              N_Vector tmp2,
                              N_Vector tmp3)
 {
-  const DDMem dd_mem = (DDMem)user_data;
+  const DDMem dd_mem     = (DDMem)user_data;
+  const DDstateMem state = dd_mem->dd_state;
 
   /* Call user supplied Jacobian callback function. */
 
   void* ud = dd_mem->dd_user_data;
-  int flag = dd_mem->dd_jacfn2(dd_mem->dd_pm->yy_diff_alias_row,
-                               dd_mem->dd_pm->yp_diff_alias_row, t, cj, yy, rr,
-                               J, ud, tmp1, tmp2, tmp3);
+  int flag = dd_mem->dd_jacfn2(state->yy_diff_alias_row,
+                               state->yp_diff_alias_row,
+                               t,
+                               cj,
+                               yy,
+                               rr,
+                               J,
+                               ud,
+                               tmp1,
+                               tmp2,
+                               tmp3);
 
   return flag;
 }

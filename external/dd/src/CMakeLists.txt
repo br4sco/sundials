@@ -10,9 +10,9 @@ endif()
 
 include_directories(${CMAKE_SOURCE_DIR}/src)
 
-set(dd_SOURCES matrix.c structure.c pivot.c dd_err.c dd.c)
+set(dd_SOURCES matrix.c structure.c dynamic_info.c pivot.c dd_err.c dd.c)
 
-set(dd_HEADERS alg.h darr.h dd_math.h matrix.h structure.h pivot.h dd_err.h dd.h)
+set(dd_HEADERS alg.h darr.h dd_math.h matrix.h structure.h dynamic_info.h pivot.h dd_err.h dd.h)
 
 sundials_add_library(
   dd

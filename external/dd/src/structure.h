@@ -11,10 +11,12 @@
 
 typedef struct
 {
+  SUNContext sunctx; /**< Sundials context  */
   sunindextype N; /**< Number of variables and equations of the zero'th derivative order */
   sunindextype N_backwards; /**< Number of variables and equations of the backwards DAE */
   sunindextype M_all_orders; /**< Number of equations of all derivative orders */
   sunindextype N_all_orders; /**< Number of variables of all derivative orders */
+  sunindextype N_diff; /**< Number of differential equations and differential variables in first-order index-reduced DAE */
 
   /** Equation offset vector of size `N_zeroth_order` */
   uint8_t* eqnofs;
@@ -68,7 +70,8 @@ typedef _DAEStruct* DAEStruct;
  * ========================================================================== */
 
 /** @brief Creates DAE structure. */
-DAEStruct STCreate(sunindextype N,
+DAEStruct STCreate(SUNContext sunctx,
+                   sunindextype N,
                    const uint8_t eqnofs[static N],
                    const uint8_t varofs[static N],
                    const sunindextype* var_idx_map[static N],

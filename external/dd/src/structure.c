@@ -69,7 +69,8 @@ void STDestroy(DAEStruct st)
   }
 }
 
-DAEStruct STCreate(sunindextype N,
+DAEStruct STCreate(SUNContext sunctx,
+                   sunindextype N,
                    const uint8_t eqnofs[static N],
                    const uint8_t varofs[static N],
                    const sunindextype* var_idx_map[static N],
@@ -79,7 +80,8 @@ DAEStruct STCreate(sunindextype N,
   DAEStruct st = malloc(sizeof(*st));
   if (st == NULL) { return NULL; }
 
-  st->N = N;
+  st->sunctx = sunctx;
+  st->N      = N;
 
   uint8_t K = 0;
   for (sunindextype i = 0; i < N; ++i)
@@ -98,6 +100,9 @@ DAEStruct STCreate(sunindextype N,
     st->N_all_orders += varofs[i] + 1;
     st->N_backwards += SUNMAX(varofs[i], 1);
   }
+  st->N_diff = st->N_all_orders - st->M_all_orders;
+
+  assert(st->N_diff >= 0);
 
   st->eqnofs = malloc(N * sizeof(uint8_t));
   if (st->eqnofs == NULL)
@@ -236,14 +241,20 @@ void STPrint(DAEStruct st, FILE* file)
     for (sunindextype l = 0; l < st->M_k[k]; ++l)
     {
       const sunindextype i = st->eqns_k[k][l];
-      fprintf(file, "\t[%ld]%s^(%d)\n", i, ST_EQN_NAME(st, i),
+      fprintf(file,
+              "\t[%ld]%s^(%d)\n",
+              i,
+              ST_EQN_NAME(st, i),
               ST_EQN_ORDER(st, k, i));
     }
     fprintf(file, "Variables:\n");
     for (sunindextype l = 0; l < st->N_k[k]; ++l)
     {
       const sunindextype j = st->vars_k[k][l];
-      fprintf(file, "\t[%ld]%s^(%d)\n", j, ST_VAR_NAME(st, j),
+      fprintf(file,
+              "\t[%ld]%s^(%d)\n",
+              j,
+              ST_VAR_NAME(st, j),
               ST_VAR_ORDER(st, k, j));
     }
   }

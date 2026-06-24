@@ -29,25 +29,30 @@ int main(void)
   const sunrealtype tout  = SUN_RCONST(100.0);
   const int Nd            = 200;
 
-  /* Compute DAE structure. */
-  DAEStruct st =
-    STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, PENDULUM_VAR_IDX_MAP, PENDULUM_EQN_NAMES, PENDULUM_VAR_NAMES);
-  TEST_ASSERT(st);
-
   /* Setup Sundials context. */
-  SUNContext ctx;
-  TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &ctx) == SUN_SUCCESS);
+  SUNContext sunctx;
+  TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &sunctx) == SUN_SUCCESS);
+
+  /* Compute DAE structure. */
+  DAEStruct st = STCreate(sunctx,
+                          PENDULUM_N,
+                          PENDULUM_C,
+                          PENDULUM_D,
+                          PENDULUM_VAR_IDX_MAP,
+                          PENDULUM_EQN_NAMES,
+                          PENDULUM_VAR_NAMES);
+  TEST_ASSERT(st);
 
   /* ------------------------------------------------------------------------
    * Setup Forward Problem
    * ------------------------------------------------------------------------ */
 
   /* Allocate state and Jacobian data. */
-  SUNMatrix J0 = SUNDenseMatrix(st->N, st->N, ctx);
+  SUNMatrix J0 = SUNDenseMatrix(st->N, st->N, sunctx);
   TEST_ASSERT(J0);
   DDMatrix dd_J0 = DDMatWrapDense(J0);
   TEST_ASSERT(dd_J0);
-  N_Vector Y = N_VNew_Serial(st->N_all_orders, ctx);
+  N_Vector Y = N_VNew_Serial(st->N_all_orders, sunctx);
   TEST_ASSERT(Y);
 
   /* Set DAE parameters. */
@@ -66,26 +71,24 @@ int main(void)
   TEST_ASSERT(PendulumJacf0(t0, Y, J0, data) == 0);
 
   /* Create solver session. */
-  DDMem dd_mem = DDCreate(ctx);
+  DDMem dd_mem = DDCreate(sunctx);
   TEST_ASSERT(dd_mem);
 
   TEST_ASSERT(
     DDInit(dd_mem, st, SUN_RCONST(0.0), PendulumJacf0, dd_J0, PendulumRes, t0, Y) ==
-    IDA_SUCCESS
-  );
+    IDA_SUCCESS);
 
   TEST_ASSERT(DDAdjInit(dd_mem, Nd, IDA_POLYNOMIAL) == IDA_SUCCESS);
 
   TEST_ASSERT(DDSetUserData(dd_mem, data) == IDA_SUCCESS);
 
-  TEST_ASSERT(
-    DDSSTolerances(dd_mem, SUN_RCONST(1.0e-9), SUN_RCONST(1.0e-9)) == IDA_SUCCESS
-  );
+  TEST_ASSERT(DDSSTolerances(dd_mem, SUN_RCONST(1.0e-9), SUN_RCONST(1.0e-9)) ==
+              IDA_SUCCESS);
 
   /* Setup and set linear solver. */
-  SUNMatrix J = SUNDenseMatrix(st->N_all_orders, st->N_all_orders, ctx);
+  SUNMatrix J = SUNDenseMatrix(st->N_all_orders, st->N_all_orders, sunctx);
   TEST_ASSERT(J);
-  SUNLinearSolver LS = SUNLinSol_Dense(Y, J, ctx);
+  SUNLinearSolver LS = SUNLinSol_Dense(Y, J, sunctx);
   TEST_ASSERT(LS);
 
   TEST_ASSERT(DDSetLinearSolver(dd_mem, LS, J) == IDA_SUCCESS);
@@ -114,7 +117,14 @@ int main(void)
     const sunrealtype x = P_Ith(Y, 0, 0), y = P_Ith(Y, 1, 0),
                       lam = P_Ith(Y, 2, 0);
 
-    fprintf(filef, "%.20f,%.20f,%.20f,%.20f,%.20f,%d\n", t, x, y, lam, x * x + y * y - l * l, pr == PIVOT_SUCCESS ? 1 : 0);
+    fprintf(filef,
+            "%.20f,%.20f,%.20f,%.20f,%.20f,%d\n",
+            t,
+            x,
+            y,
+            lam,
+            x * x + y * y - l * l,
+            pr == PIVOT_SUCCESS ? 1 : 0);
 
     t += tstep;
 
@@ -128,7 +138,7 @@ int main(void)
    * ------------------------------------------------------------------------ */
 
   /* Allocate state and set initial values */
-  N_Vector yyB = N_VNew_Serial(st->N_backwards, ctx);
+  N_Vector yyB = N_VNew_Serial(st->N_backwards, sunctx);
   TEST_ASSERT(yyB);
 
   N_Vector ypB = N_VClone(yyB);
@@ -140,18 +150,18 @@ int main(void)
   int indexB;
   TEST_ASSERT(DDCreateB(dd_mem, &indexB) == IDA_SUCCESS);
 
-  TEST_ASSERT(DDInitB(dd_mem, indexB, PendulumResB, tret, yyB, ypB) == IDA_SUCCESS);
+  TEST_ASSERT(DDInitB(dd_mem, indexB, PendulumResB, tret, yyB, ypB) ==
+              IDA_SUCCESS);
 
   TEST_ASSERT(
     DDSStolerancesB(dd_mem, indexB, SUN_RCONST(1.e-6), SUN_RCONST(1.e-6)) ==
-    IDA_SUCCESS
-  );
+    IDA_SUCCESS);
 
   TEST_ASSERT(DDSetUserDataB(dd_mem, indexB, data) == IDA_SUCCESS);
 
-  SUNMatrix AB = SUNDenseMatrix(st->N_backwards, st->N_backwards, ctx);
+  SUNMatrix AB = SUNDenseMatrix(st->N_backwards, st->N_backwards, sunctx);
   TEST_ASSERT(AB);
-  SUNLinearSolver LSB = SUNLinSol_Dense(yyB, AB, ctx);
+  SUNLinearSolver LSB = SUNLinSol_Dense(yyB, AB, sunctx);
   TEST_ASSERT(LSB);
 
   TEST_ASSERT(DDSetLinearSolverB(dd_mem, indexB, LSB, AB) == IDA_SUCCESS);
@@ -172,7 +182,15 @@ int main(void)
 
   while (SUNTRUE)
   {
-    fprintf(fileb, "%f,%f,%f,%f,%f,%f,%f\n", tret, yyB_arr[0], yyB_arr[2], yyB_arr[4], ypB_arr[0], ypB_arr[2], ypB_arr[4]);
+    fprintf(fileb,
+            "%f,%f,%f,%f,%f,%f,%f\n",
+            tret,
+            yyB_arr[0],
+            yyB_arr[2],
+            yyB_arr[4],
+            ypB_arr[0],
+            ypB_arr[2],
+            ypB_arr[4]);
 
     tret -= tstep;
 
@@ -192,7 +210,7 @@ int main(void)
   N_VDestroy(ypB);
   N_VDestroy(yyB);
   STDestroy(st);
-  SUNContext_Free(&ctx);
+  SUNContext_Free(&sunctx);
   SUNLinSolFree(LS);
   SUNLinSolFree(LSB);
   SUNMatDestroy(AB);

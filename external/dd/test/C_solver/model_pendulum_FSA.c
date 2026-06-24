@@ -29,22 +29,27 @@ int main(int argc, char* argv[])
   const sunrealtype tstep               = SUN_RCONST(0.1);
   const sunrealtype tout                = SUN_RCONST(100.0);
 
+  /* Setup Sundials context. */
+  SUNContext sunctx;
+  TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &sunctx) == SUN_SUCCESS);
+
   /* Compute DAE structure. */
-  DAEStruct st =
-    STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, PENDULUM_VAR_IDX_MAP, PENDULUM_EQN_NAMES, PENDULUM_VAR_NAMES);
+  DAEStruct st = STCreate(sunctx,
+                          PENDULUM_N,
+                          PENDULUM_C,
+                          PENDULUM_D,
+                          PENDULUM_VAR_IDX_MAP,
+                          PENDULUM_EQN_NAMES,
+                          PENDULUM_VAR_NAMES);
 
   TEST_ASSERT(st);
 
-  /* Setup Sundials context. */
-  SUNContext ctx;
-  TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &ctx) == SUN_SUCCESS);
-
   /* Allocate state and Jacobian data. */
-  SUNMatrix J0 = SUNDenseMatrix(st->N, st->N, ctx);
+  SUNMatrix J0 = SUNDenseMatrix(st->N, st->N, sunctx);
   TEST_ASSERT(J0);
   DDMatrix dd_J0 = DDMatWrapDense(J0);
   TEST_ASSERT(dd_J0);
-  N_Vector Y = N_VNew_Serial(st->N_all_orders, ctx);
+  N_Vector Y = N_VNew_Serial(st->N_all_orders, sunctx);
   TEST_ASSERT(Y);
 
   /* Allocate forward forward-sensitivity arrays. */
@@ -68,32 +73,31 @@ int main(int argc, char* argv[])
   TEST_ASSERT(PendulumJacf0(t0, Y, J0, data) == 0);
 
   /* Create solver session. */
-  DDMem dd_mem = DDCreate(ctx);
+  DDMem dd_mem = DDCreate(sunctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(
-    DDInit(dd_mem, st, ZERO, PendulumJacf0, dd_J0, PendulumRes, t0, Y) == IDA_SUCCESS
-  );
+  TEST_ASSERT(DDInit(dd_mem, st, ZERO, PendulumJacf0, dd_J0, PendulumRes, t0, Y) ==
+              IDA_SUCCESS);
 
-  TEST_ASSERT(
-    DDSensInit(dd_mem, PENDULUM_NP, IDA_STAGGERED, analytic_sens_residual ? PendulumResS : NULL, YS) ==
-    IDA_SUCCESS
-  );
+  TEST_ASSERT(DDSensInit(dd_mem,
+                         PENDULUM_NP,
+                         IDA_STAGGERED,
+                         analytic_sens_residual ? PendulumResS : NULL,
+                         YS) == IDA_SUCCESS);
 
   TEST_ASSERT(DDSetUserData(dd_mem, data) == IDA_SUCCESS);
 
-  TEST_ASSERT(
-    DDSSTolerances(dd_mem, SUN_RCONST(1.0e-6), SUN_RCONST(1.0e-7)) == IDA_SUCCESS
-  );
+  TEST_ASSERT(DDSSTolerances(dd_mem, SUN_RCONST(1.0e-6), SUN_RCONST(1.0e-7)) ==
+              IDA_SUCCESS);
 
   TEST_ASSERT(DDSensEEtolerances(dd_mem) == IDA_SUCCESS);
   sunrealtype pbar[] = {data->param[0], data->param[1]};
   TEST_ASSERT(DDSetSensParams(dd_mem, data->param, pbar, NULL) == IDA_SUCCESS)
 
   /* Setup and set linear solver. */
-  SUNMatrix J = SUNDenseMatrix(st->N_all_orders, st->N_all_orders, ctx);
+  SUNMatrix J = SUNDenseMatrix(st->N_all_orders, st->N_all_orders, sunctx);
   TEST_ASSERT(J);
-  SUNLinearSolver LS = SUNLinSol_Dense(Y, J, ctx);
+  SUNLinearSolver LS = SUNLinSol_Dense(Y, J, sunctx);
   TEST_ASSERT(LS);
 
   TEST_ASSERT(DDSetLinearSolver(dd_mem, LS, J) == IDA_SUCCESS);
@@ -102,8 +106,10 @@ int main(int argc, char* argv[])
   TEST_ASSERT(DDSetStopTime(dd_mem, tout) == IDA_SUCCESS);
 
   /* Set up result file */
-  FILE* file =
-    fopen(analytic_sens_residual ? "pendulum_analytic_sens_residual_FSA.csv" : "pendulum_FSA.csv", "w");
+  FILE* file = fopen(analytic_sens_residual
+                       ? "pendulum_analytic_sens_residual_FSA.csv"
+                       : "pendulum_FSA.csv",
+                     "w");
   TEST_ASSERT(file);
 
   /* Solve and output solution. */
@@ -127,23 +133,21 @@ int main(int argc, char* argv[])
                       xg = P_Ith(YS[1], 0, 0), yg = P_Ith(YS[1], 1, 0),
                       lamg = P_Ith(YS[1], 2, 0);
 
-    fprintf(
-      file,
-      "%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%."
-      "20f,%d\n",
-      t,
-      x,
-      y,
-      lam,
-      xl,
-      yl,
-      laml,
-      xg,
-      yg,
-      lamg,
-      x * x + y * y - l * l,
-      pr == PIVOT_SUCCESS ? 1 : 0
-    );
+    fprintf(file,
+            "%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%."
+            "20f,%d\n",
+            t,
+            x,
+            y,
+            lam,
+            xl,
+            yl,
+            laml,
+            xg,
+            yg,
+            lamg,
+            x * x + y * y - l * l,
+            pr == PIVOT_SUCCESS ? 1 : 0);
 
     t += tstep;
     flag = DDSolve(dd_mem, t, &tret, Y, IDA_NORMAL);
@@ -158,7 +162,7 @@ int main(int argc, char* argv[])
   N_VDestroy(Y);
   N_VDestroyVectorArray(YS, PENDULUM_NP);
   STDestroy(st);
-  SUNContext_Free(&ctx);
+  SUNContext_Free(&sunctx);
   SUNLinSolFree(LS);
   SUNMatDestroy(J);
   SUNMatDestroy(J0);

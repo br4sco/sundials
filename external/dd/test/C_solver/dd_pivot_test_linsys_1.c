@@ -2,6 +2,7 @@
 #include <sundials/sundials_core.h>
 #include <sunmatrix/sunmatrix_dense.h>
 
+#include "dynamic_info.h"
 #include "matrix.h"
 #include "models.h"
 #include "pivot.h"
@@ -14,7 +15,7 @@ int main(void)
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
   DAEStruct st =
-    STCreate(LINSYS_N, LINSYS_C, LINSYS_D, LINSYS_VAR_IDX_MAP, NULL, NULL);
+    STCreate(CTX, LINSYS_N, LINSYS_C, LINSYS_D, LINSYS_VAR_IDX_MAP, NULL, NULL);
 
   TEST_ASSERT(st != NULL);
   DDMatrix jac = DDMatWrapDense(jac_linsys_create());
@@ -54,33 +55,40 @@ int main(void)
   TEST_ASSERT(spec[1] == 2);
   TEST_ASSERT(spec[2] == 0);
   TEST_ASSERT(spec[3] == 0);
-  TEST_ASSERT(pm->NNZ_spec == 1);
-  TEST_ASSERT(pm->NZ_spec[0] == 1);
 
-  TEST_ASSERT(pm->N_diff == 2);
-  TEST_ASSERT(pm->diff_var_aliases[0].fst == 3);
-  TEST_ASSERT(pm->diff_var_aliases[0].snd == 4);
-  TEST_ASSERT(pm->diff_var_aliases[1].fst == 4);
-  TEST_ASSERT(pm->diff_var_aliases[1].snd == 5);
+  DDstateMem state = DDstateCreate(st);
+  TEST_ASSERT(state != NULL)
 
-  TEST_ASSERT(pm->yy_diff_alias_row[0] < 0);
-  TEST_ASSERT(pm->yy_diff_alias_row[1] < 0);
-  TEST_ASSERT(pm->yy_diff_alias_row[2] < 0);
-  TEST_ASSERT(pm->yy_diff_alias_row[3] == 9);
-  TEST_ASSERT(pm->yy_diff_alias_row[4] == 10);
-  TEST_ASSERT(pm->yy_diff_alias_row[5] < 0);
+  TEST_ASSERT(DDstateUpdate(st, pm->spec, state) == SUN_SUCCESS);
 
-  TEST_ASSERT(pm->yp_diff_alias_row[0] < 0);
-  TEST_ASSERT(pm->yp_diff_alias_row[1] < 0);
-  TEST_ASSERT(pm->yp_diff_alias_row[2] < 0);
-  TEST_ASSERT(pm->yp_diff_alias_row[3] < 0);
-  TEST_ASSERT(pm->yp_diff_alias_row[4] == 9);
-  TEST_ASSERT(pm->yp_diff_alias_row[5] == 10);
+  Pair_sunindextype* aliases = state->diff_var_aliases;
+  TEST_ASSERT(aliases[0].fst == 3);
+  TEST_ASSERT(aliases[0].snd == 4);
+  TEST_ASSERT(aliases[1].fst == 4);
+  TEST_ASSERT(aliases[1].snd == 5);
 
-  PIVDestroy(pm);
+  sunindextype* yy = state->yy_diff_alias_row;
+  sunindextype* yp = state->yp_diff_alias_row;
+
+  TEST_ASSERT(yy[0] < 0);
+  TEST_ASSERT(yy[1] < 0);
+  TEST_ASSERT(yy[2] < 0);
+  TEST_ASSERT(yy[3] == 9);
+  TEST_ASSERT(yy[4] == 10);
+  TEST_ASSERT(yy[5] < 0);
+
+  TEST_ASSERT(yp[0] < 0);
+  TEST_ASSERT(yp[1] < 0);
+  TEST_ASSERT(yp[2] < 0);
+  TEST_ASSERT(yp[3] < 0);
+  TEST_ASSERT(yp[4] == 9);
+  TEST_ASSERT(yp[5] == 10);
+
+  PIVDestroy(&pm);
   STDestroy(st);
   SUNMatDestroy(DDMatGetSUNMat(jac));
   DDMatDestroy(jac);
+  DDstateDestroy(&state);
 
   return EXIT_SUCCESS;
 }

@@ -48,17 +48,22 @@ int main(int argc, char* argv[])
   const sunrealtype tstep = SUN_RCONST(0.1);
   const sunrealtype tout  = SUN_RCONST(100.0);
 
+  /* Setup Sundials context. */
+  SUNContext sunctx;
+  TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &sunctx) == SUN_SUCCESS);
+
   /* Compute DAE structure. */
-  DAEStruct st =
-    STCreate(PENDULUM_N, PENDULUM_C, PENDULUM_D, PENDULUM_VAR_IDX_MAP, PENDULUM_EQN_NAMES, PENDULUM_VAR_NAMES);
+  DAEStruct st = STCreate(sunctx,
+                          PENDULUM_N,
+                          PENDULUM_C,
+                          PENDULUM_D,
+                          PENDULUM_VAR_IDX_MAP,
+                          PENDULUM_EQN_NAMES,
+                          PENDULUM_VAR_NAMES);
 
   TEST_ASSERT(st);
 
   const sunindextype N = st->N_all_orders;
-
-  /* Setup Sundials context. */
-  SUNContext sunctx;
-  TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &sunctx) == SUN_SUCCESS);
 
   /* Allocate state and Jacobian data. */
   SUNMatrix J0 = SUNDenseMatrix(st->N, st->N, sunctx);
@@ -89,14 +94,12 @@ int main(int argc, char* argv[])
 
   TEST_ASSERT(
     DDInit(dd_mem, st, SUN_RCONST(0.0), PendulumJacf0, dd_J0, PendulumRes, t0, Y) ==
-    IDA_SUCCESS
-  );
+    IDA_SUCCESS);
 
   TEST_ASSERT(DDSetUserData(dd_mem, data) == IDA_SUCCESS);
 
-  TEST_ASSERT(
-    DDSSTolerances(dd_mem, SUN_RCONST(1.0e-9), SUN_RCONST(1.0e-9)) == IDA_SUCCESS
-  );
+  TEST_ASSERT(DDSSTolerances(dd_mem, SUN_RCONST(1.0e-9), SUN_RCONST(1.0e-9)) ==
+              IDA_SUCCESS);
 
   /* Setup and set linear solver. */
   SUNMatrix J        = NULL;
@@ -113,8 +116,11 @@ int main(int argc, char* argv[])
     break;
   case CSR:
   case CSC:
-    J =
-      SUNSparseMatrix(N, N, PENDULUM_JAC_NNZ + 0 + 4, mat_type == CSR ? CSR_MAT : CSC_MAT, sunctx);
+    J = SUNSparseMatrix(N,
+                        N,
+                        PENDULUM_JAC_NNZ + 0 + 4,
+                        mat_type == CSR ? CSR_MAT : CSC_MAT,
+                        sunctx);
     TEST_ASSERT(J);
     LS = SUNLinSol_KLU(Y, J, sunctx);
     TEST_ASSERT(LS);
@@ -128,21 +134,21 @@ int main(int argc, char* argv[])
   case NONE: break;
   case DENSE:
     TEST_ASSERT(
-      DDSetJacFn(dd_mem, (DDLsJacFn){.id = DD_JAC_1, .fn.jacfn1 = PendulumJacfn_Dense}) ==
-      IDA_SUCCESS
-    );
+      DDSetJacFn(dd_mem,
+                 (DDLsJacFn){.id = DD_JAC_1, .fn.jacfn1 = PendulumJacfn_Dense}) ==
+      IDA_SUCCESS);
     break;
   case CSR:
     TEST_ASSERT(
-      DDSetJacFn(dd_mem, (DDLsJacFn){.id = DD_JAC_1, .fn.jacfn1 = PendulumJacfn_CSR}) ==
-      IDA_SUCCESS
-    );
+      DDSetJacFn(dd_mem,
+                 (DDLsJacFn){.id = DD_JAC_1, .fn.jacfn1 = PendulumJacfn_CSR}) ==
+      IDA_SUCCESS);
     break;
   case CSC:
     TEST_ASSERT(
-      DDSetJacFn(dd_mem, (DDLsJacFn){.id = DD_JAC_2, .fn.jacfn2 = PendulumJacfn_CSC}) ==
-      IDA_SUCCESS
-    );
+      DDSetJacFn(dd_mem,
+                 (DDLsJacFn){.id = DD_JAC_2, .fn.jacfn2 = PendulumJacfn_CSC}) ==
+      IDA_SUCCESS);
     break;
   }
 
@@ -170,7 +176,14 @@ int main(int argc, char* argv[])
     const sunrealtype x = P_Ith(Y, 0, 0), y = P_Ith(Y, 1, 0),
                       lam = P_Ith(Y, 2, 0);
 
-    fprintf(file, "%.20f,%.20f,%.20f,%.20f,%.20f,%d\n", t, x, y, lam, x * x + y * y - l * l, pr == PIVOT_SUCCESS ? 1 : 0);
+    fprintf(file,
+            "%.20f,%.20f,%.20f,%.20f,%.20f,%d\n",
+            t,
+            x,
+            y,
+            lam,
+            x * x + y * y - l * l,
+            pr == PIVOT_SUCCESS ? 1 : 0);
 
     t += tstep;
 

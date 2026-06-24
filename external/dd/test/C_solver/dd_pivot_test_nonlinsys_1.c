@@ -13,8 +13,13 @@ int main(void)
 {
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
-  DAEStruct st =
-    STCreate(NONLINSYS_N, NONLINSYS_C, NONLINSYS_D, NONLINSYS_VAR_IDX_MAP, NULL, NULL);
+  DAEStruct st = STCreate(CTX,
+                          NONLINSYS_N,
+                          NONLINSYS_C,
+                          NONLINSYS_D,
+                          NONLINSYS_VAR_IDX_MAP,
+                          NULL,
+                          NULL);
 
   TEST_ASSERT(st != NULL);
   DDMatrix jac = DDMatWrapDense(jac_nonlinsys_create(1, 1, 1, 1, 1, 1, 1, 1));
@@ -75,13 +80,8 @@ int main(void)
   TEST_ASSERT(spec[2] == 0);
   TEST_ASSERT(spec[3] == 0);
   TEST_ASSERT(spec[4] == 1);
-  TEST_ASSERT(pm->NNZ_spec == 3);
-  sunindextype* NZ_spec = pm->NZ_spec;
-  TEST_ASSERT(NZ_spec[0] == 0);
-  TEST_ASSERT(NZ_spec[1] == 1);
-  TEST_ASSERT(NZ_spec[2] == 4);
 
-  PIVDestroy(pm);
+  PIVDestroy(&pm);
   STDestroy(st);
   SUNMatDestroy(DDMatGetSUNMat(jac));
   DDMatDestroy(jac);

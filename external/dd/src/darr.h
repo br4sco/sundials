@@ -43,7 +43,9 @@
   }                                                                       \
                                                                           \
   size_t DynArrLength_##NAME(const DynArr_##NAME arr)                     \
-  { return arr ? arr->len : 0; }                                          \
+  {                                                                       \
+    return arr ? arr->len : 0;                                            \
+  }                                                                       \
                                                                           \
   Option_##NAME DynArrGet_##NAME(DynArr_##NAME arr, size_t i)             \
   {                                                                       \
