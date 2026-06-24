@@ -301,12 +301,6 @@ static void DDSensCleanup(DDMem dd_mem);
 DDMem DDCreate(SUNContext sunctx)
 
 {
-  if (sunctx == NULL)
-  {
-    DDHandleErrWithCtx(DD_ERR_NULL_SUNCTX, NULL);
-    return NULL;
-  }
-
   SUNFunctionBegin(sunctx);
 
   DDMem dd_mem = malloc(sizeof(*dd_mem));

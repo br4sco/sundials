@@ -8,7 +8,6 @@
  * ---------------------------------------------------------------------------*/
 
 #define DD_ERR_CODE_LIST(ENTRY)                  \
-  ENTRY(DD_ERR_NULL_SUNCTX, "SUNCtx is NULL")    \
   ENTRY(DD_ERR_DD_MEM_NULL, "DD memory is NULL") \
   ENTRY(DD_ERR_IDA_ERR, "an IDA error occured")  \
   ENTRY(DD_ERR_GENERIC, "an error occured")
