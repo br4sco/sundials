@@ -6,9 +6,8 @@
 #include <sundials/sundials_context.h>
 #include <sundials/sundials_types.h>
 
-#include "macros.h"
 #include "matrix.h"
-#include "structure.h"
+#include "static_info.h"
 
 /* ==========================================================================
  * Types and Interface
@@ -38,13 +37,11 @@ typedef int DDJacFn0(sunrealtype t, N_Vector Y, SUNMatrix J, void* user_data);
  * Pivot Memory
  * -------------------------------------------------------------------------- */
 
-DD_DEFINE_PAIR(sunindextype, sunindextype, sunindextype);
-
 typedef struct
 {
   SUNContext sunctx; /**< Sundials context  */
 
-  DAEStruct st; /**< DAE structure */
+  DDStaticInfo si; /**< Static DAE info */
 
   DDJacFn0* jacfn0; /**< Jacobian callback function for highest order derivatives */
 
@@ -68,8 +65,8 @@ typedef struct
 /** @brief Holds pivoting state */
 typedef _PivMem* PivMem;
 
-/** @brief Creates pivot data based on DAE structure. `jacfn0` is required. */
-PivMem PIVCreate(SUNContext, DAEStruct, DDMatrix, DDJacFn0);
+/** @brief Creates pivot data based on static DAE info. `jacfn0` is required. */
+PivMem PIVCreate(SUNContext, DDStaticInfo, DDMatrix, DDJacFn0);
 
 /** @brief Sets user data for the Jacobian callback **/
 SUNErrCode PIVSetUserData(PivMem, void*);
@@ -88,16 +85,9 @@ void PIVPrint(PivMem, FILE*);
  * Pivoting
  * -------------------------------------------------------------------------- */
 
-typedef enum PivotResult
-{
-  PIVOT_SUCCESS     = 0,
-  PIVOT_UNNECESSARY = 1,
-  PIVOT_FAIL        = -1
-} PivotResult;
-
 /** @brief Pivots a DAE given its structure and Jacobian, and computes the DD
- *         spec. Returns PIVOT_SUCCESS if the spec changed, PIVOT_UNNECESSARY
- *         if unchanged, and PIVOT_FAIL on error. */
-PivotResult PIVPivot(PivMem, sunrealtype, sunrealtype, N_Vector);
+ *         spec. Sets *spec_changed to SUNTRUE if the spec changed, SUNFALSE
+ *         otherwise. Returns a SUNErrCode. */
+SUNErrCode PIVPivot(PivMem, sunrealtype, sunrealtype, N_Vector, sunbooleantype*);
 
 #endif

@@ -6,7 +6,7 @@
 
 #include "matrix.h"
 #include "pivot.h"
-#include "structure.h"
+#include "static_info.h"
 #include "sundials/sundials_errors.h"
 #include "sundials/sundials_nvector.h"
 #include "sunmatrix/sunmatrix_sparse.h"
@@ -348,7 +348,7 @@ DDMem DDCreate(SUNContext);
 void DDFree(DDMem*);
 
 /** @brief Initializes a solver session. */
-int DDInit(DDMem, DAEStruct, DDResFn, uint8_t*, sunrealtype, N_Vector);
+int DDInit(DDMem, DDStaticInfo, DDResFn, uint8_t*, sunrealtype, N_Vector);
 
 /** @brief Re-initializes a solver session. */
 int DDReInit(DDMem, sunrealtype, N_Vector);

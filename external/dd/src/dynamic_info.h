@@ -3,28 +3,30 @@
 
 #include <sundials/sundials_types.h>
 
-#include "pivot.h"
-#include "structure.h"
+#include "macros.h"
+#include "static_info.h"
 
 /* ==========================================================================
  * DD State Memory
  * ========================================================================== */
 
-struct DDstateMemRec
+DD_DEFINE_PAIR(sunindextype, sunindextype, sunindextype);
+
+struct DDDAEStateRec
 {
   Pair_sunindextype* diff_var_aliases;
   sunindextype* yy_diff_alias_row;
   sunindextype* yp_diff_alias_row;
 };
 
-typedef struct DDstateMemRec* DDstateMem;
+typedef struct DDDAEStateRec* DDDAEState;
 
-void DDstateDestroy(DDstateMem*);
+void DDDAEStateDestroy(DDDAEState*);
 
-DDstateMem DDstateCreate(DAEStruct);
+DDDAEState DDDAEStateCreate(DDStaticInfo);
 
-DDstateMem DDstateClone(DAEStruct, DDstateMem);
+DDDAEState DDDAEStateClone(DDStaticInfo, DDDAEState);
 
-SUNErrCode DDstateUpdate(DAEStruct, uint8_t*, DDstateMem);
+SUNErrCode DDDAEStateUpdate(DDStaticInfo, uint8_t*, DDDAEState);
 
 #endif

@@ -13,7 +13,7 @@
 #include "matrix.h"
 #include "models.h"
 #include "pivot.h"
-#include "structure.h"
+#include "static_info.h"
 #include "sundials/sundials_types.h"
 #include "test.h"
 
@@ -35,25 +35,25 @@ int main(void)
   TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &sunctx) == SUN_SUCCESS);
 
   /* Compute DAE structure. */
-  DAEStruct st = STCreate(sunctx,
-                          PENDULUM_N,
-                          PENDULUM_C,
-                          PENDULUM_D,
-                          PENDULUM_VAR_IDX_MAP,
-                          PENDULUM_EQN_NAMES,
-                          PENDULUM_VAR_NAMES);
-  TEST_ASSERT(st);
+  DDStaticInfo si = DDstaticInfoCreate(sunctx,
+                                       PENDULUM_N,
+                                       PENDULUM_C,
+                                       PENDULUM_D,
+                                       PENDULUM_VAR_IDX_MAP,
+                                       PENDULUM_EQN_NAMES,
+                                       PENDULUM_VAR_NAMES);
+  TEST_ASSERT(si);
 
   /* ------------------------------------------------------------------------
    * Setup Forward Problem
    * ------------------------------------------------------------------------ */
 
   /* Allocate state and Jacobian data. */
-  SUNMatrix J0 = SUNDenseMatrix(st->N, st->N, sunctx);
+  SUNMatrix J0 = SUNDenseMatrix(si->N, si->N, sunctx);
   TEST_ASSERT(J0);
   DDMatrix dd_J0 = DDMatWrapDense(J0);
   TEST_ASSERT(dd_J0);
-  N_Vector Y = N_VNew_Serial(st->N_all_orders, sunctx);
+  N_Vector Y = N_VNew_Serial(si->N_all_orders, sunctx);
   TEST_ASSERT(Y);
 
   /* Set DAE parameters. */
@@ -68,16 +68,17 @@ int main(void)
   PendulumY0(data, theta0, Y);
 
   /* Create pivot memory and compute initial spec. */
-  PivMem pm = PIVCreate(sunctx, st, dd_J0, PendulumJacf0);
+  PivMem pm = PIVCreate(sunctx, si, dd_J0, PendulumJacf0);
   TEST_ASSERT(pm);
   TEST_ASSERT(PIVSetUserData(pm, data) == SUN_SUCCESS);
-  TEST_ASSERT(PIVPivot(pm, ZERO, t0, Y) != PIVOT_FAIL);
+  sunbooleantype spec_changed;
+  TEST_ASSERT(PIVPivot(pm, ZERO, t0, Y, &spec_changed) == SUN_SUCCESS);
 
   /* Create solver session. */
   DDMem dd_mem = DDCreate(sunctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(DDInit(dd_mem, st, PendulumRes, pm->spec, t0, Y) == IDA_SUCCESS);
+  TEST_ASSERT(DDInit(dd_mem, si, PendulumRes, pm->spec, t0, Y) == IDA_SUCCESS);
 
   TEST_ASSERT(DDAdjInit(dd_mem, Nd, IDA_POLYNOMIAL) == IDA_SUCCESS);
 
@@ -87,7 +88,7 @@ int main(void)
               IDA_SUCCESS);
 
   /* Setup and set linear solver. */
-  SUNMatrix J = SUNDenseMatrix(st->N_all_orders, st->N_all_orders, sunctx);
+  SUNMatrix J = SUNDenseMatrix(si->N_all_orders, si->N_all_orders, sunctx);
   TEST_ASSERT(J);
   SUNLinearSolver LS = SUNLinSol_Dense(Y, J, sunctx);
   TEST_ASSERT(LS);
@@ -112,9 +113,8 @@ int main(void)
 
   while (SUNTRUE)
   {
-    PivotResult pr = PIVPivot(pm, ZERO, t, Y);
-    TEST_ASSERT(pr >= 0);
-    if (pr == PIVOT_SUCCESS)
+    TEST_ASSERT(PIVPivot(pm, ZERO, t, Y, &spec_changed) == SUN_SUCCESS);
+    if (spec_changed)
     {
       TEST_ASSERT(DDSetSpec(dd_mem, pm->spec) == SUN_SUCCESS);
     }
@@ -129,7 +129,7 @@ int main(void)
             y,
             lam,
             x * x + y * y - l * l,
-            pr == PIVOT_SUCCESS ? 1 : 0);
+            spec_changed ? 1 : 0);
 
     t += tstep;
 
@@ -143,7 +143,7 @@ int main(void)
    * ------------------------------------------------------------------------ */
 
   /* Allocate state and set initial values */
-  N_Vector yyB = N_VNew_Serial(st->N_backwards, sunctx);
+  N_Vector yyB = N_VNew_Serial(si->N_backwards, sunctx);
   TEST_ASSERT(yyB);
 
   N_Vector ypB = N_VClone(yyB);
@@ -164,7 +164,7 @@ int main(void)
 
   TEST_ASSERT(DDSetUserDataB(dd_mem, indexB, data) == IDA_SUCCESS);
 
-  SUNMatrix AB = SUNDenseMatrix(st->N_backwards, st->N_backwards, sunctx);
+  SUNMatrix AB = SUNDenseMatrix(si->N_backwards, si->N_backwards, sunctx);
   TEST_ASSERT(AB);
   SUNLinearSolver LSB = SUNLinSol_Dense(yyB, AB, sunctx);
   TEST_ASSERT(LSB);
@@ -215,7 +215,7 @@ int main(void)
   N_VDestroy(Y);
   N_VDestroy(ypB);
   N_VDestroy(yyB);
-  STDestroy(st);
+  DDstaticInfoDestroy(si);
   SUNContext_Free(&sunctx);
   SUNLinSolFree(LS);
   SUNLinSolFree(LSB);

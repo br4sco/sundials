@@ -6,7 +6,7 @@
 #include <sundials/sundials_matrix.h>
 #include <sunmatrix/sunmatrix_sparse.h>
 
-#include "structure.h"
+#include "static_info.h"
 #include "sundials/sundials_errors.h"
 #include "sundials/sundials_types.h"
 
@@ -144,7 +144,7 @@ DDMatrix DDMatWrapDense(SUNMatrix);
 DDMatrix DDMatWrapSparse(SUNMatrix);
 
 /** @brief Creates a sparse matrix based on additional structural information. */
-SUNMatrix DDSparseSUNMatFromStructure(const DAEStruct*,
+SUNMatrix DDSparseSUNMatFromStructure(const DDStaticInfo*,
                                       sunindextype,
                                       int,
                                       SUNContext);

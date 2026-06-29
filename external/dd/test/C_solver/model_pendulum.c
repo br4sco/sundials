@@ -14,7 +14,7 @@
 #include "dd_math.h"
 #include "matrix.h"
 #include "models.h"
-#include "structure.h"
+#include "static_info.h"
 #include "sundials/sundials_types.h"
 #include "test.h"
 
@@ -53,20 +53,20 @@ int main(int argc, char* argv[])
   TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &sunctx) == SUN_SUCCESS);
 
   /* Compute DAE structure. */
-  DAEStruct st = STCreate(sunctx,
-                          PENDULUM_N,
-                          PENDULUM_C,
-                          PENDULUM_D,
-                          PENDULUM_VAR_IDX_MAP,
-                          PENDULUM_EQN_NAMES,
-                          PENDULUM_VAR_NAMES);
+  DDStaticInfo si = DDstaticInfoCreate(sunctx,
+                                       PENDULUM_N,
+                                       PENDULUM_C,
+                                       PENDULUM_D,
+                                       PENDULUM_VAR_IDX_MAP,
+                                       PENDULUM_EQN_NAMES,
+                                       PENDULUM_VAR_NAMES);
 
-  TEST_ASSERT(st);
+  TEST_ASSERT(si);
 
-  const sunindextype N = st->N_all_orders;
+  const sunindextype N = si->N_all_orders;
 
   /* Allocate state and Jacobian data. */
-  SUNMatrix J0 = SUNDenseMatrix(st->N, st->N, sunctx);
+  SUNMatrix J0 = SUNDenseMatrix(si->N, si->N, sunctx);
   TEST_ASSERT(J0);
   DDMatrix dd_J0 = DDMatWrapDense(J0);
   TEST_ASSERT(dd_J0);
@@ -85,16 +85,17 @@ int main(int argc, char* argv[])
   PendulumY0(data, theta0, Y);
 
   /* Create pivot memory and compute initial spec. */
-  PivMem pm = PIVCreate(sunctx, st, dd_J0, PendulumJacf0);
+  PivMem pm = PIVCreate(sunctx, si, dd_J0, PendulumJacf0);
   TEST_ASSERT(pm);
   TEST_ASSERT(PIVSetUserData(pm, data) == SUN_SUCCESS);
-  TEST_ASSERT(PIVPivot(pm, ZERO, t0, Y) != PIVOT_FAIL);
+  sunbooleantype spec_changed;
+  TEST_ASSERT(PIVPivot(pm, ZERO, t0, Y, &spec_changed) == SUN_SUCCESS);
 
   /* Create solver session. */
   DDMem dd_mem = DDCreate(sunctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(DDInit(dd_mem, st, PendulumRes, pm->spec, t0, Y) == IDA_SUCCESS);
+  TEST_ASSERT(DDInit(dd_mem, si, PendulumRes, pm->spec, t0, Y) == IDA_SUCCESS);
 
   TEST_ASSERT(DDSetUserData(dd_mem, data) == IDA_SUCCESS);
 
@@ -170,9 +171,8 @@ int main(int argc, char* argv[])
 
   while (flag != IDA_TSTOP_RETURN)
   {
-    PivotResult pr = PIVPivot(pm, ZERO, t, Y);
-    TEST_ASSERT(pr >= 0);
-    if (pr == PIVOT_SUCCESS)
+    TEST_ASSERT(PIVPivot(pm, ZERO, t, Y, &spec_changed) == SUN_SUCCESS);
+    if (spec_changed)
     {
       TEST_ASSERT(DDSetSpec(dd_mem, pm->spec) == SUN_SUCCESS);
     }
@@ -187,7 +187,7 @@ int main(int argc, char* argv[])
             y,
             lam,
             x * x + y * y - l * l,
-            pr == PIVOT_SUCCESS ? 1 : 0);
+            spec_changed ? 1 : 0);
 
     t += tstep;
 
@@ -200,7 +200,7 @@ int main(int argc, char* argv[])
   PIVDestroy(&pm);
   DDMatDestroy(dd_J0);
   N_VDestroy(Y);
-  STDestroy(st);
+  DDstaticInfoDestroy(si);
   SUNContext_Free(&sunctx);
   SUNLinSolFree(LS);
   SUNMatDestroy(J);

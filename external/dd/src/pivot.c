@@ -8,11 +8,11 @@
 #include "dd_err.h"
 #include "matrix.h"
 #include "pivot.h"
-#include "structure.h"
+#include "static_info.h"
 #include "sundials/sundials_errors.h"
 #include "sundials/sundials_types.h"
 
-PivMem PIVCreate(SUNContext sunctx, DAEStruct st, DDMatrix J_0, DDJacFn0 jacfn0)
+PivMem PIVCreate(SUNContext sunctx, DDStaticInfo si, DDMatrix J_0, DDJacFn0 jacfn0)
 {
   SUNFunctionBegin(sunctx);
 
@@ -22,21 +22,21 @@ PivMem PIVCreate(SUNContext sunctx, DAEStruct st, DDMatrix J_0, DDJacFn0 jacfn0)
   SUNAssertNull(pm, SUN_ERR_MALLOC_FAIL);
 
   pm->sunctx = sunctx;
-  pm->st     = st;
+  pm->si     = si;
   pm->jacfn0 = jacfn0;
   pm->J_0    = J_0;
 
-  const sunindextype st_N = st->N;
-  const uint8_t K         = st->K;
+  const sunindextype si_N = si->N;
+  const uint8_t K         = si->K;
 
-  pm->N = st_N;
+  pm->N = si_N;
 
   pm->K = K;
 
-  pm->spec = calloc(st_N, sizeof(*pm->spec));
+  pm->spec = calloc(si_N, sizeof(*pm->spec));
   SUNAssertNull(pm->spec, SUN_ERR_MALLOC_FAIL);
 
-  pm->old_spec = calloc(st_N, sizeof(*pm->old_spec));
+  pm->old_spec = calloc(si_N, sizeof(*pm->old_spec));
   SUNAssertNull(pm->old_spec, SUN_ERR_MALLOC_FAIL);
 
   pm->known_k = malloc(K * sizeof(*pm->known_k));
@@ -51,19 +51,19 @@ PivMem PIVCreate(SUNContext sunctx, DAEStruct st, DDMatrix J_0, DDJacFn0 jacfn0)
   pm->wss = malloc(K * sizeof(DDMatrixWorkspace*));
   SUNAssertNull(pm->wss, SUN_ERR_MALLOC_FAIL);
 
-  pm->known_k_flat = calloc(K * st_N, sizeof(*pm->known_k_flat));
+  pm->known_k_flat = calloc(K * si_N, sizeof(*pm->known_k_flat));
   SUNAssertNull(pm->known_k_flat, SUN_ERR_MALLOC_FAIL);
 
-  pm->vars_k_flat = calloc(st->N_all_orders, sizeof(*pm->vars_k_flat));
+  pm->vars_k_flat = calloc(si->N_all_orders, sizeof(*pm->vars_k_flat));
   SUNAssertNull(pm->vars_k_flat, SUN_ERR_MALLOC_FAIL);
 
   sunindextype ofs = 0;
   for (uint8_t k = 0; k < K; ++k)
   {
-    const sunindextype M  = st->M_k[k];
-    const sunindextype N  = st->N_k[k];
-    const sunindextype* I = st->eqns_k[k];
-    const sunindextype* J = st->vars_k[k];
+    const sunindextype M  = si->M_k[k];
+    const sunindextype N  = si->N_k[k];
+    const sunindextype* I = si->eqns_k[k];
+    const sunindextype* J = si->vars_k[k];
 
     SUNAssertNull(N > 0, SUN_ERR_OP_FAIL);
 
@@ -83,7 +83,7 @@ PivMem PIVCreate(SUNContext sunctx, DAEStruct st, DDMatrix J_0, DDJacFn0 jacfn0)
       pm->wss[k] = ws;
     }
 
-    pm->known_k[k] = pm->known_k_flat + k * st_N;
+    pm->known_k[k] = pm->known_k_flat + k * si_N;
     pm->vars_k[k]  = pm->vars_k_flat + ofs;
     ofs += N;
   }
@@ -146,20 +146,20 @@ void PIVDestroy(PivMem* pm_ptr)
 
 void PIVPrint(PivMem pm, FILE* file)
 {
-  DAEStruct st = pm->st;
+  DDStaticInfo si = pm->si;
 
   fprintf(file, "--- START PIVOTDATA ----\n");
-  for (uint8_t k = 0; k < st->K; ++k)
+  for (uint8_t k = 0; k < si->K; ++k)
   {
-    fprintf(file, "Stage k = %d:\n", ST_STAGE_FROM_INDEX(st, k));
-    for (sunindextype n = 0; n < st->N_k[k]; ++n)
+    fprintf(file, "Stage k = %d:\n", DDSI_STAGE_FROM_INDEX(si, k));
+    for (sunindextype n = 0; n < si->N_k[k]; ++n)
     {
-      const sunindextype j = st->vars_k[k][n];
+      const sunindextype j = si->vars_k[k][n];
       fprintf(file,
               "\t[%ld]%s^(%d)\t%s\n",
               j,
-              ST_VAR_NAME(st, j),
-              ST_VAR_ORDER(st, k, j),
+              DDSI_VAR_NAME(si, j),
+              DDSI_VAR_ORDER(si, k, j),
               pm->known_k[k][j] ? "true" : "false");
     }
   }
@@ -175,32 +175,34 @@ static void PDReset(PivMem pm)
   memset(pm->known_k_flat, SUNFALSE, N * K * sizeof(*pm->known_k_flat));
 }
 
-PivotResult PIVPivot(PivMem pm, sunrealtype tol, sunrealtype t, N_Vector Y)
+SUNErrCode PIVPivot(PivMem pm,
+                    sunrealtype tol,
+                    sunrealtype t,
+                    N_Vector Y,
+                    sunbooleantype* spec_changed)
 {
   SUNFunctionBegin(pm->sunctx);
 
-  DAEStruct st = pm->st;
+  DDStaticInfo si = pm->si;
 
   memcpy(pm->old_spec, pm->spec, pm->N * sizeof(*pm->old_spec));
 
   PDReset(pm);
 
-  if (pm->jacfn0(t, Y, DDMatGetSUNMat(pm->J_0), pm->user_data) < 0)
-  {
-    return PIVOT_FAIL;
-  }
+  SUNAssert(pm->jacfn0(t, Y, DDMatGetSUNMat(pm->J_0), pm->user_data) >= 0,
+            SUN_ERR_OP_FAIL);
 
-  for (uint8_t k = 0; k < st->K; ++k)
+  for (uint8_t k = 0; k < si->K; ++k)
   {
-    const sunindextype M = st->M_k[k];
-    const sunindextype N = st->N_k[k];
+    const sunindextype M = si->M_k[k];
+    const sunindextype N = si->N_k[k];
 
     SUNAssert(N > 0, SUN_ERR_OP_FAIL);
 
     if (M == 0) { continue; }
 
-    const sunindextype* vars = st->vars_k[k];
-    const sunindextype* eqns = st->eqns_k[k];
+    const sunindextype* vars = si->vars_k[k];
+    const sunindextype* eqns = si->eqns_k[k];
     sunbooleantype* pm_known = pm->known_k[k];
 
     sunindextype m = 0;
@@ -218,7 +220,7 @@ PivotResult PIVPivot(PivMem pm, sunrealtype tol, sunrealtype t, N_Vector Y)
     }
     else
     {
-      SUNAssert(k != st->K - 1 && "J0 should always be square",
+      SUNAssert(k != si->K - 1 && "J0 should always be square",
                 SUN_ERR_OUTOFRANGE);
 
       /* Some variables may be marked as known from previous stages. */
@@ -257,7 +259,7 @@ PivotResult PIVPivot(PivMem pm, sunrealtype tol, sunrealtype t, N_Vector Y)
            known variable must also be known, proceed to mark these before the
            next stage. */
 
-        for (uint8_t kk = k + 1; kk < st->K; ++kk)
+        for (uint8_t kk = k + 1; kk < si->K; ++kk)
         {
           for (sunindextype n = 0; n < N; ++n)
           {
@@ -274,11 +276,11 @@ PivotResult PIVPivot(PivMem pm, sunrealtype tol, sunrealtype t, N_Vector Y)
   }
 
   /* Compute new spec from known_k. */
-  for (uint8_t k = 0; k < st->K; ++k)
+  for (uint8_t k = 0; k < si->K; ++k)
   {
-    for (sunindextype n = 0; n < st->N_k[k]; ++n)
+    for (sunindextype n = 0; n < si->N_k[k]; ++n)
     {
-      const sunindextype* vars = st->vars_k[k];
+      const sunindextype* vars = si->vars_k[k];
       const sunindextype j     = vars[n];
       if (!pm->known_k[k][j])
       {
@@ -288,18 +290,19 @@ PivotResult PIVPivot(PivMem pm, sunrealtype tol, sunrealtype t, N_Vector Y)
     }
   }
 
-  return memcmp(pm->old_spec, pm->spec, pm->N * sizeof(*pm->old_spec)) != 0
-           ? PIVOT_SUCCESS
-           : PIVOT_UNNECESSARY;
+  *spec_changed =
+    memcmp(pm->old_spec, pm->spec, pm->N * sizeof(*pm->old_spec)) != 0;
+
+  return SUN_SUCCESS;
 }
 
-/* void PSPrintSubmat(const Structure st[static 1], const PivMem pm[static 1], */
+/* void PSPrintSubmat(const Structure si[static 1], const PivMem pm[static 1], */
 /*                    uint8_t k, FILE* file) */
 /* { */
-/*   for (sunindextype i = 0; i < st->st_Nk[k]; ++i) */
+/*   for (sunindextype i = 0; i < si->st_Nk[k]; ++i) */
 /*   { */
 /*     sunindextype j = pm->pm_vars[k][i]; */
-/*     fprintf(file, "\td%d%s", ST_VAR_ORDER(st, k, j), ST_VAR_NAME(st, j)); */
+/*     fprintf(file, "\td%d%s", DDSI_VAR_ORDER(si, k, j), DDSI_VAR_NAME(si, j)); */
 /*   } */
 
 /*   SUNMatrix mat = DDMatGetSUNMat(pm->pm_jacs[k]); */

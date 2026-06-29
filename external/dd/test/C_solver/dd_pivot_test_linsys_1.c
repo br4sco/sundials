@@ -6,7 +6,7 @@
 #include "matrix.h"
 #include "models.h"
 #include "pivot.h"
-#include "structure.h"
+#include "static_info.h"
 #include "test.h"
 #include "test_structure.h"
 
@@ -14,26 +14,32 @@ int main(void)
 {
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
-  DAEStruct st =
-    STCreate(CTX, LINSYS_N, LINSYS_C, LINSYS_D, LINSYS_VAR_IDX_MAP, NULL, NULL);
+  DDStaticInfo si = DDstaticInfoCreate(CTX,
+                                       LINSYS_N,
+                                       LINSYS_C,
+                                       LINSYS_D,
+                                       LINSYS_VAR_IDX_MAP,
+                                       NULL,
+                                       NULL);
 
-  TEST_ASSERT(st != NULL);
+  TEST_ASSERT(si != NULL);
   SUNMatrix J_0 = SUNDenseMatrix(LINSYS_N, LINSYS_N, CTX);
   TEST_ASSERT(J_0 != NULL);
   DDMatrix jac = DDMatWrapDense(J_0);
   TEST_ASSERT(jac != NULL);
-  PivMem pm = PIVCreate(CTX, st, jac, LinsysJacf0);
+  PivMem pm = PIVCreate(CTX, si, jac, LinsysJacf0);
   TEST_ASSERT(pm != NULL);
 
-  N_Vector Y = N_VNew_Serial(st->N_all_orders, CTX);
+  N_Vector Y = N_VNew_Serial(si->N_all_orders, CTX);
   TEST_ASSERT(Y != NULL);
   N_VConst(ZERO, Y);
 
-  TEST_ASSERT(PIVPivot(pm, ZERO, ZERO, Y) != PIVOT_FAIL);
+  sunbooleantype spec_changed;
+  TEST_ASSERT(PIVPivot(pm, ZERO, ZERO, Y, &spec_changed) == SUN_SUCCESS);
 
   size_t k              = 0;
   sunbooleantype* known = pm->known_k[k];
-  TEST_ASSERT(st->M_k[k] == 2)
+  TEST_ASSERT(si->M_k[k] == 2)
   TEST_ASSERT(known[0]);
   TEST_ASSERT(known[1] == SUNFALSE);
   TEST_ASSERT(known[2]);
@@ -41,7 +47,7 @@ int main(void)
 
   k     = 1;
   known = pm->known_k[k];
-  TEST_ASSERT(st->M_k[k] == 3)
+  TEST_ASSERT(si->M_k[k] == 3)
   TEST_ASSERT(known[0]);
   TEST_ASSERT(known[1] == SUNFALSE);
   TEST_ASSERT(known[2]);
@@ -49,7 +55,7 @@ int main(void)
 
   k     = 2;
   known = pm->known_k[k];
-  TEST_ASSERT(st->M_k[k] == 4)
+  TEST_ASSERT(si->M_k[k] == 4)
   TEST_ASSERT(known[0]);
   TEST_ASSERT(known[1]);
   TEST_ASSERT(known[2]);
@@ -61,10 +67,10 @@ int main(void)
   TEST_ASSERT(spec[2] == 0);
   TEST_ASSERT(spec[3] == 0);
 
-  DDstateMem state = DDstateCreate(st);
+  DDDAEState state = DDDAEStateCreate(si);
   TEST_ASSERT(state != NULL)
 
-  TEST_ASSERT(DDstateUpdate(st, pm->spec, state) == SUN_SUCCESS);
+  TEST_ASSERT(DDDAEStateUpdate(si, pm->spec, state) == SUN_SUCCESS);
 
   Pair_sunindextype* aliases = state->diff_var_aliases;
   TEST_ASSERT(aliases[0].fst == 3);
@@ -90,11 +96,11 @@ int main(void)
   TEST_ASSERT(yp[5] == 10);
 
   PIVDestroy(&pm);
-  STDestroy(st);
+  DDstaticInfoDestroy(si);
   N_VDestroy(Y);
   SUNMatDestroy(J_0);
   DDMatDestroy(jac);
-  DDstateDestroy(&state);
+  DDDAEStateDestroy(&state);
 
   return EXIT_SUCCESS;
 }

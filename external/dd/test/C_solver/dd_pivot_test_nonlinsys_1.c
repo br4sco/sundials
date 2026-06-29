@@ -5,7 +5,7 @@
 #include "matrix.h"
 #include "models.h"
 #include "pivot.h"
-#include "structure.h"
+#include "static_info.h"
 #include "test.h"
 #include "test_structure.h"
 
@@ -13,35 +13,36 @@ int main(void)
 {
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
-  DAEStruct st = STCreate(CTX,
-                          NONLINSYS_N,
-                          NONLINSYS_C,
-                          NONLINSYS_D,
-                          NONLINSYS_VAR_IDX_MAP,
-                          NULL,
-                          NULL);
+  DDStaticInfo si = DDstaticInfoCreate(CTX,
+                                       NONLINSYS_N,
+                                       NONLINSYS_C,
+                                       NONLINSYS_D,
+                                       NONLINSYS_VAR_IDX_MAP,
+                                       NULL,
+                                       NULL);
 
-  TEST_ASSERT(st != NULL);
+  TEST_ASSERT(si != NULL);
   SUNMatrix J_0 = SUNDenseMatrix(NONLINSYS_N, NONLINSYS_N, CTX);
   TEST_ASSERT(J_0 != NULL);
   DDMatrix jac = DDMatWrapDense(J_0);
   TEST_ASSERT(jac != NULL);
-  PivMem pm = PIVCreate(CTX, st, jac, NonlinsysJacf0);
+  PivMem pm = PIVCreate(CTX, si, jac, NonlinsysJacf0);
   TEST_ASSERT(pm != NULL);
 
-  N_Vector Y = N_VNew_Serial(st->N_all_orders, CTX);
+  N_Vector Y = N_VNew_Serial(si->N_all_orders, CTX);
   TEST_ASSERT(Y != NULL);
   N_VConst(ONE, Y);
 
-  TEST_ASSERT(PIVPivot(pm, ZERO, ZERO, Y) != PIVOT_FAIL);
+  sunbooleantype spec_changed;
+  TEST_ASSERT(PIVPivot(pm, ZERO, ZERO, Y, &spec_changed) == SUN_SUCCESS);
 
   size_t k = 0;
-  TEST_ASSERT(st->M_k[k] == 0) /* emtpy stage */
+  TEST_ASSERT(si->M_k[k] == 0) /* emtpy stage */
 
   k                     = 1;
   sunbooleantype* known = pm->known_k[k];
-  sunindextype* eqns    = st->eqns_k[k];
-  TEST_ASSERT(st->M_k[k] == 2)
+  sunindextype* eqns    = si->eqns_k[k];
+  TEST_ASSERT(si->M_k[k] == 2)
   TEST_ASSERT(eqns[0] == 2);
   TEST_ASSERT(eqns[1] == 3);
   TEST_ASSERT(known[0] == SUNFALSE);
@@ -52,8 +53,8 @@ int main(void)
 
   k     = 2;
   known = pm->known_k[k];
-  eqns  = st->eqns_k[k];
-  TEST_ASSERT(st->M_k[k] == 4)
+  eqns  = si->eqns_k[k];
+  TEST_ASSERT(si->M_k[k] == 4)
   TEST_ASSERT(eqns[0] == 0);
   TEST_ASSERT(eqns[1] == 2);
   TEST_ASSERT(eqns[2] == 3);
@@ -66,8 +67,8 @@ int main(void)
 
   k     = 3;
   known = pm->known_k[k];
-  eqns  = st->eqns_k[k];
-  TEST_ASSERT(st->M_k[k] == 5)
+  eqns  = si->eqns_k[k];
+  TEST_ASSERT(si->M_k[k] == 5)
   TEST_ASSERT(eqns[0] == 0);
   TEST_ASSERT(eqns[1] == 1);
   TEST_ASSERT(eqns[2] == 2);
@@ -87,7 +88,7 @@ int main(void)
   TEST_ASSERT(spec[4] == 1);
 
   PIVDestroy(&pm);
-  STDestroy(st);
+  DDstaticInfoDestroy(si);
   N_VDestroy(Y);
   SUNMatDestroy(J_0);
   DDMatDestroy(jac);
