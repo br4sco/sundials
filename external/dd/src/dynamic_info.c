@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <string.h>
 #include <sundials/priv/sundials_errors_impl.h>
 #include "sundials/sundials_errors.h"
@@ -55,7 +56,7 @@ DDstateMem DDstateClone(DAEStruct st, DDstateMem state)
          st->N_all_orders * sizeof(*state->yy_diff_alias_row));
 
   memcpy(new_state->yp_diff_alias_row,
-         state->yy_diff_alias_row,
+         state->yp_diff_alias_row,
          st->N_all_orders * sizeof(*state->yp_diff_alias_row));
 
   return new_state;

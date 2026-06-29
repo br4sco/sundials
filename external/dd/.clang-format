@@ -1,2 +1,3 @@
 BasedOnStyle      : InheritParentConfig
 BinPackParameters : false
+BinPackArguments  : false

@@ -88,22 +88,18 @@ int main(int argc, char* argv[])
     N_VConst(SUN_RCONST(0.0), YS[i]);
   }
 
-  /* Compute J0 at the initial time. */
-  TEST_ASSERT(SUNMatZero(J0) == SUN_SUCCESS);
-  TEST_ASSERT(LotkaVolterraJacf0(t0, Y, J0, &p) == 0);
+  /* Create pivot memory and compute initial spec. */
+  PivMem pm = PIVCreate(sunctx, st, dd_J0, LotkaVolterraJacf0);
+  TEST_ASSERT(pm);
+  TEST_ASSERT(PIVSetUserData(pm, &p) == SUN_SUCCESS);
+  TEST_ASSERT(PIVPivot(pm, ZERO, t0, Y) != PIVOT_FAIL);
 
   /* Create solver session. */
   DDMem dd_mem = DDCreate(sunctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(DDInit(dd_mem,
-                     st,
-                     SUN_RCONST(0.0),
-                     LotkaVolterraJacf0,
-                     dd_J0,
-                     LotkaVolterraRes,
-                     t0,
-                     Y) == IDA_SUCCESS);
+  TEST_ASSERT(DDInit(dd_mem, st, LotkaVolterraRes, pm->spec, t0, Y) ==
+              IDA_SUCCESS);
 
   TEST_ASSERT(
     DDSensInit(dd_mem, LOTKA_VOLTERRA_NP, IDA_STAGGERED, LotkaVolterraResS, YS) ==
@@ -184,8 +180,12 @@ int main(int argc, char* argv[])
 
   while (sr != IDA_TSTOP_RETURN)
   {
-    PivotResult pr = DDPivot(dd_mem);
+    PivotResult pr = PIVPivot(pm, ZERO, tout, Y);
     TEST_ASSERT(pr >= 0);
+    if (pr == PIVOT_SUCCESS)
+    {
+      TEST_ASSERT(DDSetSpec(dd_mem, pm->spec) == SUN_SUCCESS);
+    }
 
     const sunrealtype x = LV_Ith(Y, 0, 0), y = LV_Ith(Y, 1, 0);
     const sunrealtype xS[] = {LV_Ith(YS[0], 0, 0),
@@ -222,6 +222,7 @@ int main(int argc, char* argv[])
 
   /* Cleanup */
   DDFree(&dd_mem);
+  PIVDestroy(&pm);
   DDMatDestroy(dd_J0);
   N_VDestroy(Y);
   N_VDestroyVectorArray(YS, LOTKA_VOLTERRA_NP);

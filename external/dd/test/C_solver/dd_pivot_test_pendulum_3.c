@@ -24,13 +24,23 @@ int main(void)
                           NULL);
 
   TEST_ASSERT(st != NULL);
-  DDMatrix jac = DDMatWrapDense(jac_pendulum_create(0, -1));
+  SUNMatrix J_0 = SUNDenseMatrix(PENDULUM_N, PENDULUM_N, CTX);
+  TEST_ASSERT(J_0 != NULL);
+  DDMatrix jac = DDMatWrapDense(J_0);
   TEST_ASSERT(jac != NULL);
-  PivMem pm = PIVCreate(CTX, st, jac);
+  PivMem pm = PIVCreate(CTX, st, jac, PendulumJacf0);
   TEST_ASSERT(pm != NULL);
 
-  TEST_ASSERT(PIVPivot(st, jac, 0, pm) == SUN_SUCCESS);
-  TEST_ASSERT(PIVComputeDDSpec(st, pm) == SUN_SUCCESS);
+  PendulumData data = {.m = ONE, .param = {ONE, ZERO}};
+  PIVSetUserData(pm, &data);
+
+  N_Vector Y = N_VNew_Serial(st->N_all_orders, CTX);
+  TEST_ASSERT(Y != NULL);
+  N_VConst(ZERO, Y);
+  P_Ith(Y, 0, 0) = ZERO;
+  P_Ith(Y, 1, 0) = -ONE;
+
+  TEST_ASSERT(PIVPivot(pm, ZERO, ZERO, Y) != PIVOT_FAIL);
 
   size_t k              = 0;
   sunbooleantype* known = pm->known_k[k];
@@ -85,6 +95,8 @@ int main(void)
 
   PIVDestroy(&pm);
   STDestroy(st);
+  N_VDestroy(Y);
+  SUNMatDestroy(J_0);
   DDMatDestroy(jac);
   DDstateDestroy(&state);
 

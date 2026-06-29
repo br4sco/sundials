@@ -12,6 +12,7 @@
 #include "dd_math.h"
 #include "matrix.h"
 #include "models.h"
+#include "pivot.h"
 #include "structure.h"
 #include "sundials/sundials_types.h"
 #include "test.h"
@@ -66,17 +67,17 @@ int main(void)
   sunrealtype theta0 = SUN_RCONST(PI) / FIVE + SUN_RCONST(PI) / TWO;
   PendulumY0(data, theta0, Y);
 
-  /* Compute J0 at the initial time. */
-  TEST_ASSERT(SUNMatZero(J0) == SUN_SUCCESS);
-  TEST_ASSERT(PendulumJacf0(t0, Y, J0, data) == 0);
+  /* Create pivot memory and compute initial spec. */
+  PivMem pm = PIVCreate(sunctx, st, dd_J0, PendulumJacf0);
+  TEST_ASSERT(pm);
+  TEST_ASSERT(PIVSetUserData(pm, data) == SUN_SUCCESS);
+  TEST_ASSERT(PIVPivot(pm, ZERO, t0, Y) != PIVOT_FAIL);
 
   /* Create solver session. */
   DDMem dd_mem = DDCreate(sunctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(
-    DDInit(dd_mem, st, SUN_RCONST(0.0), PendulumJacf0, dd_J0, PendulumRes, t0, Y) ==
-    IDA_SUCCESS);
+  TEST_ASSERT(DDInit(dd_mem, st, PendulumRes, pm->spec, t0, Y) == IDA_SUCCESS);
 
   TEST_ASSERT(DDAdjInit(dd_mem, Nd, IDA_POLYNOMIAL) == IDA_SUCCESS);
 
@@ -111,8 +112,12 @@ int main(void)
 
   while (SUNTRUE)
   {
-    PivotResult pr = DDPivot(dd_mem);
+    PivotResult pr = PIVPivot(pm, ZERO, t, Y);
     TEST_ASSERT(pr >= 0);
+    if (pr == PIVOT_SUCCESS)
+    {
+      TEST_ASSERT(DDSetSpec(dd_mem, pm->spec) == SUN_SUCCESS);
+    }
 
     const sunrealtype x = P_Ith(Y, 0, 0), y = P_Ith(Y, 1, 0),
                       lam = P_Ith(Y, 2, 0);
@@ -205,6 +210,7 @@ int main(void)
 
   /* Cleanup */
   DDFree(&dd_mem);
+  PIVDestroy(&pm);
   DDMatDestroy(dd_J0);
   N_VDestroy(Y);
   N_VDestroy(ypB);

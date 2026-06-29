@@ -22,18 +22,20 @@ int main(void)
                           NULL);
 
   TEST_ASSERT(st != NULL);
-  DDMatrix jac = DDMatWrapDense(jac_pendulum_create(cos(0), sin(0)));
-  TEST_ASSERT(jac != NULL);
+  SUNMatrix J_0 = SUNDenseMatrix(st->N, st->N, CTX);
+  TEST_ASSERT(J_0 != NULL);
+  DDMatrix dd_J_0 = DDMatWrapDense(J_0);
+  TEST_ASSERT(dd_J_0 != NULL);
 
-  PivMem pm = PIVCreate(CTX, st, jac);
+  PivMem pm = PIVCreate(CTX, st, dd_J_0, PendulumJacf0);
   TEST_ASSERT(pm != NULL);
   PIVDestroy(&pm);
   pm = NULL;
   PIVDestroy(&pm);
 
   STDestroy(st);
-  SUNMatDestroy(DDMatGetSUNMat(jac));
-  DDMatDestroy(jac);
+  SUNMatDestroy(J_0);
+  DDMatDestroy(dd_J_0);
 
   return EXIT_SUCCESS;
 }

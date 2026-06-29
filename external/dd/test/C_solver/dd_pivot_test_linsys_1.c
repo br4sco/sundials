@@ -18,13 +18,18 @@ int main(void)
     STCreate(CTX, LINSYS_N, LINSYS_C, LINSYS_D, LINSYS_VAR_IDX_MAP, NULL, NULL);
 
   TEST_ASSERT(st != NULL);
-  DDMatrix jac = DDMatWrapDense(jac_linsys_create());
+  SUNMatrix J_0 = SUNDenseMatrix(LINSYS_N, LINSYS_N, CTX);
+  TEST_ASSERT(J_0 != NULL);
+  DDMatrix jac = DDMatWrapDense(J_0);
   TEST_ASSERT(jac != NULL);
-  PivMem pm = PIVCreate(CTX, st, jac);
+  PivMem pm = PIVCreate(CTX, st, jac, LinsysJacf0);
   TEST_ASSERT(pm != NULL);
 
-  TEST_ASSERT(PIVPivot(st, jac, 0, pm) == SUN_SUCCESS);
-  TEST_ASSERT(PIVComputeDDSpec(st, pm) == SUN_SUCCESS);
+  N_Vector Y = N_VNew_Serial(st->N_all_orders, CTX);
+  TEST_ASSERT(Y != NULL);
+  N_VConst(ZERO, Y);
+
+  TEST_ASSERT(PIVPivot(pm, ZERO, ZERO, Y) != PIVOT_FAIL);
 
   size_t k              = 0;
   sunbooleantype* known = pm->known_k[k];
@@ -86,7 +91,8 @@ int main(void)
 
   PIVDestroy(&pm);
   STDestroy(st);
-  SUNMatDestroy(DDMatGetSUNMat(jac));
+  N_VDestroy(Y);
+  SUNMatDestroy(J_0);
   DDMatDestroy(jac);
   DDstateDestroy(&state);
 

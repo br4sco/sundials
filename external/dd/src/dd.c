@@ -11,6 +11,7 @@
 #include "darr.h"
 #include "dd.h"
 #include "dd_err.h"
+#include "dynamic_info.h"
 #include "idas/idas_impl.h"
 #include "idas/idas_ls.h"
 #include "matrix.h"
@@ -30,114 +31,6 @@
 #define INITIAL_DYN_ARR_CAPACITY 20
 #define ZERO                     SUN_RCONST(0.0)
 #define ONE                      SUN_RCONST(1.0)
-
-/* --------------------------------------------------------------------------
- * DD State Memory
- * -------------------------------------------------------------------------- */
-
-struct DDstateMemRec
-{
-  Pair_sunindextype* diff_var_aliases;
-  sunindextype* yy_diff_alias_row;
-  sunindextype* yp_diff_alias_row;
-};
-
-typedef struct DDstateMemRec* DDstateMem;
-
-static void DDstateDestroy(DDstateMem* state_ptr)
-{
-  if (state_ptr == NULL || *state_ptr == NULL) { return; }
-
-  DDstateMem state = *state_ptr;
-  free(state->diff_var_aliases);
-  free(state->yy_diff_alias_row);
-  free(state->yp_diff_alias_row);
-  free(state);
-
-  *state_ptr = NULL;
-}
-
-static DDstateMem DDstateCreate(DAEStruct st)
-{
-  DDstateMem state = calloc(1, sizeof(*state));
-  if (state == NULL) { return NULL; }
-
-  state->diff_var_aliases = malloc(st->N_diff * sizeof(*state->diff_var_aliases));
-  if (state->diff_var_aliases == NULL) { goto fail; }
-
-  state->yy_diff_alias_row =
-    malloc(st->N_all_orders * sizeof(*state->yy_diff_alias_row));
-  if (state->yy_diff_alias_row == NULL) { goto fail; }
-
-  state->yp_diff_alias_row =
-    malloc(st->N_all_orders * sizeof(*state->yp_diff_alias_row));
-  if (state->yp_diff_alias_row == NULL) { goto fail; }
-
-  return state;
-
-fail:
-  DDstateDestroy(&state);
-  return NULL;
-}
-
-static DDstateMem DDstateClone(DAEStruct st, DDstateMem state)
-{
-  DDstateMem new_state = DDstateCreate(st);
-  if (new_state == NULL) { return NULL; }
-
-  memcpy(new_state->diff_var_aliases,
-         state->diff_var_aliases,
-         st->N_diff * sizeof(*new_state->diff_var_aliases));
-
-  memcpy(new_state->yy_diff_alias_row,
-         state->yy_diff_alias_row,
-         st->N_all_orders * sizeof(*state->yy_diff_alias_row));
-
-  memcpy(new_state->yp_diff_alias_row,
-         state->yy_diff_alias_row,
-         st->N_all_orders * sizeof(*state->yp_diff_alias_row));
-
-  return new_state;
-}
-
-static void DDstateUpdate(DAEStruct st, uint8_t* spec, DDstateMem state_mem)
-
-{
-  memset(state_mem->yy_diff_alias_row,
-         -1,
-         st->N_all_orders * sizeof(*state_mem->yy_diff_alias_row));
-  memset(state_mem->yp_diff_alias_row,
-         -1,
-         st->N_all_orders * sizeof(*state_mem->yp_diff_alias_row));
-
-  sunindextype ofs = 0;
-  for (sunindextype i = 0; i < st->N; ++i)
-  {
-    const uint8_t d = spec[i];
-
-    for (uint8_t j = 0; j < d; ++j)
-    {
-      assert(ofs < st->N_diff);
-
-      sunindextype yy_idx = st->var_deriv_chains[i][j],
-                   yp_idx = st->var_deriv_chains[i][j + 1];
-
-      assert(0 <= yy_idx && yy_idx < st->N_all_orders);
-      assert(0 <= yp_idx && yp_idx < st->N_all_orders);
-
-      state_mem->diff_var_aliases[ofs] = (Pair_sunindextype){
-        .fst = yy_idx,
-        .snd = yp_idx,
-      };
-
-      sunindextype eqn                     = ofs + st->M_all_orders;
-      state_mem->yy_diff_alias_row[yy_idx] = eqn;
-      state_mem->yp_diff_alias_row[yp_idx] = eqn;
-
-      ofs++;
-    }
-  }
-}
 
 /* --------------------------------------------------------------------------
  * DD Checkpoints
@@ -218,19 +111,14 @@ struct DDMemRec
 {
   SUNContext sunctx;
 
-  /* DAE Structure and Pivoting */
+  /* DAE Structure */
 
   DAEStruct dd_st;
-  PivMem dd_pm;
-  sunrealtype dd_pivot_tol;
-  uint8_t* dd_prev_spec;
-  DDJacFn0* dd_jacf0;
-  DDMatrix dd_J0;
-  SUNMatrix dd_J;
 
   /* Dynamic State */
 
   DDstateMem dd_state;
+  uint8_t* dd_spec;
 
   /* IDA Memory */
 
@@ -238,6 +126,7 @@ struct DDMemRec
 
   /* Forward Problem */
 
+  SUNMatrix dd_J;
   DDResFn* dd_res;
   DDLsJacFn1* dd_jacfn1;
   DDLsJacFn2* dd_jacfn2;
@@ -436,9 +325,8 @@ void DDFree(DDMem* dd_mem_ptr)
 
   DDSensCleanup(dd_mem);
   DDAdjCleanup(dd_mem);
-  PIVDestroy(&dd_mem->dd_pm);
   DDstateDestroy(&dd_mem->dd_state);
-  free(dd_mem->dd_prev_spec);
+  free(dd_mem->dd_spec);
 
   if (dd_mem->ida_mem != NULL)
   {
@@ -461,10 +349,8 @@ void DDFree(DDMem* dd_mem_ptr)
 
 int DDInit(DDMem dd_mem,
            DAEStruct st,
-           sunrealtype ptol,
-           DDJacFn0 jacf0,
-           DDMatrix J0,
            DDResFn res,
+           uint8_t* spec,
            sunrealtype t0,
            N_Vector Y0)
 {
@@ -478,29 +364,40 @@ int DDInit(DDMem dd_mem,
 
   SUNFunctionBegin(sunctx);
 
+  if (st == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
+
   if (res == NULL)
   {
     DDHandleErr(SUN_ERR_ARG_CORRUPT);
     return SUN_ERR_ARG_CORRUPT;
   }
 
-  if (jacf0 == NULL)
+  if (spec == NULL)
   {
     DDHandleErr(SUN_ERR_ARG_CORRUPT);
     return SUN_ERR_ARG_CORRUPT;
   }
 
-  dd_mem->dd_st        = st;
-  dd_mem->dd_pivot_tol = ptol;
-  dd_mem->dd_t0        = t0;
+  if (Y0 == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
 
-  PivMem pm = PIVCreate(sunctx, st, J0);
-  if (pm == NULL)
+  dd_mem->dd_st = st;
+  dd_mem->dd_t0 = t0;
+
+  dd_mem->dd_spec = malloc(st->N * sizeof(*dd_mem->dd_spec));
+  if (dd_mem->dd_spec == NULL)
   {
     DDHandleErr(SUN_ERR_MEM_FAIL);
     return SUN_ERR_MEM_FAIL;
   }
-  dd_mem->dd_pm = pm;
+  memcpy(dd_mem->dd_spec, spec, st->N * sizeof(*dd_mem->dd_spec));
 
   DDstateMem state = DDstateCreate(st);
   if (state == NULL)
@@ -510,27 +407,13 @@ int DDInit(DDMem dd_mem,
   }
   dd_mem->dd_state = state;
 
-  uint8_t* prev_spec = malloc(st->N * sizeof(*dd_mem->dd_prev_spec));
-  if (prev_spec == NULL)
-  {
-    DDHandleErr(SUN_ERR_MEM_FAIL);
-    return SUN_ERR_MEM_FAIL;
-  }
-  dd_mem->dd_prev_spec = prev_spec;
-
-  dd_mem->dd_jacf0 = jacf0;
-  dd_mem->dd_J0    = J0;
-  dd_mem->dd_res   = res;
-
-  if ((PIVPivot(st, J0, ptol, pm) < 0) || (PIVComputeDDSpec(st, pm) < 0))
+  if (DDstateUpdate(st, spec, state) < 0)
   {
     DDHandleErr(SUN_ERR_OP_FAIL);
     return SUN_ERR_OP_FAIL;
   }
 
-  memcpy(prev_spec, pm->spec, st->N * sizeof(*prev_spec));
-
-  DDstateUpdate(st, pm->spec, dd_mem->dd_state);
+  dd_mem->dd_res = res;
 
   dd_mem->dd_yy = N_VClone(Y0);
   dd_mem->dd_yp = N_VClone(Y0);
@@ -539,7 +422,7 @@ int DDInit(DDMem dd_mem,
     DDHandleErr(SUN_ERR_MEM_FAIL);
     return SUN_ERR_MEM_FAIL;
   }
-  DDSetYpFromY(dd_mem->dd_st, state, Y0, dd_mem->dd_yp);
+  DDSetYpFromY(st, state, Y0, dd_mem->dd_yp);
 
   dd_mem->dd_id = N_VClone(Y0);
   if (dd_mem->dd_id == NULL)
@@ -681,146 +564,136 @@ int DDSolve(DDMem dd_mem,
 }
 
 /* --------------------------------------------------------------------------
- * DDPivot
+ * DDSetSpec
  * -------------------------------------------------------------------------- */
 
-PivotResult DDPivot(DDMem dd_mem)
+int DDSetSpec(DDMem dd_mem, uint8_t* spec)
 {
   if (dd_mem == NULL)
   {
     DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
-    return PIVOT_FAIL;
+    return DD_ERR_DD_MEM_NULL;
   }
 
   SUNFunctionBegin(dd_mem->sunctx);
 
   DAEStruct st = dd_mem->dd_st;
-  PivMem pm    = dd_mem->dd_pm;
 
-  memcpy(dd_mem->dd_prev_spec, pm->spec, st->N * sizeof(*pm->spec));
+  if (memcmp(spec, dd_mem->dd_spec, st->N * sizeof(*spec)) == 0)
+  {
+    return SUN_SUCCESS;
+  }
+  memcpy(dd_mem->dd_spec, spec, st->N * sizeof(*dd_mem->dd_spec));
+
+  DDstateMem state = dd_mem->dd_state;
+
+  if (DDstateUpdate(st, spec, state) < 0)
+  {
+    DDHandleErr(SUN_ERR_OP_FAIL);
+    return SUN_ERR_OP_FAIL;
+  }
 
   IDAMem ida_mem = dd_mem->ida_mem;
 
-  N_Vector yy = dd_mem->dd_yy, yp = dd_mem->dd_yp;
-  DDMatrix J0 = dd_mem->dd_J0;
-
+  N_Vector yy = dd_mem->dd_yy, yp = dd_mem->dd_yp, id = dd_mem->dd_id;
   const sunrealtype tn = ida_mem->ida_tn;
 
   if (IDAGetDky(ida_mem, tn, 0, yy) < 0)
   {
     DDHandleErr(DD_ERR_IDA_ERR);
-    return PIVOT_FAIL;
+    return DD_ERR_IDA_ERR;
   }
 
-  if (dd_mem->dd_jacf0(tn, yy, DDMatGetSUNMat(J0), dd_mem->dd_user_data) != 0)
+  DDSetId(st, state, id);
+
+  if (IDASetId(ida_mem, id) < 0)
   {
-    DDHandleErr(SUN_ERR_OP_FAIL);
-    return PIVOT_FAIL;
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
   }
 
-  if (PIVPivot(st, J0, dd_mem->dd_pivot_tol, pm) < 0)
+  DDSetYpFromY(st, state, yy, yp);
+
+  if (IDAReInit(ida_mem, tn, yy, yp) < 0)
   {
-    DDHandleErr(SUN_ERR_OP_FAIL);
-    return PIVOT_FAIL;
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
   }
 
-  if (PIVComputeDDSpec(st, pm) < 0)
+  if (ida_mem->ida_sensi)
   {
-    DDHandleErr(SUN_ERR_OP_FAIL);
-    return PIVOT_FAIL;
-  }
+    N_Vector *yyS = dd_mem->dd_yyS, *ypS = dd_mem->dd_ypS;
 
-  sunbooleantype changed = SUNFALSE;
-  for (sunindextype i = 0; i < st->N; ++i)
-  {
-    if (dd_mem->dd_prev_spec[i] != pm->spec[i])
-    {
-      changed = SUNTRUE;
-      break;
-    }
-  }
-
-  if (changed)
-  {
-    DDstateUpdate(st, pm->spec, dd_mem->dd_state);
-
-    N_Vector id = dd_mem->dd_id;
-
-    DDSetId(st, dd_mem->dd_state, id);
-
-    if (IDASetId(ida_mem, id) < 0)
+    if (IDAGetSensDky(ida_mem, tn, 0, yyS) < 0)
     {
       DDHandleErr(DD_ERR_IDA_ERR);
-      return PIVOT_FAIL;
+      return DD_ERR_IDA_ERR;
     }
 
-    DDSetYpFromY(st, dd_mem->dd_state, yy, yp);
+    for (int i = 0; i < ida_mem->ida_Ns; ++i)
+    {
+      DDSetYpFromY(st, state, yyS[i], ypS[i]);
+    }
 
-    if (IDAReInit(ida_mem, tn, yy, yp) < 0)
+    if (IDASensReInit(ida_mem, ida_mem->ida_ism, yyS, ypS) < 0)
     {
       DDHandleErr(DD_ERR_IDA_ERR);
-      return PIVOT_FAIL;
+      return DD_ERR_IDA_ERR;
     }
+  }
 
-    if (ida_mem->ida_sensi)
+  if (ida_mem->ida_adj)
+  {
+    IDAadjMem ida_adj_mem = ida_mem->ida_adj_mem;
+
+    if (ida_adj_mem->ck_mem == NULL)
     {
-      N_Vector *yyS = dd_mem->dd_yyS, *ypS = dd_mem->dd_ypS;
-
-      if (IDAGetSensDky(ida_mem, tn, 0, yyS) < 0)
+      /* No IDA checkpoints were accumulated since the last IDAAdjReInit, so
+         DDSetSpec is being called again before any DDSolveF. Update the
+         current DD checkpoint's state in-place rather than prepending a new
+         empty checkpoint. */
+      if (DDstateUpdate(st, spec, dd_mem->ck_mem->ck_state) < 0)
       {
-        DDHandleErr(DD_ERR_IDA_ERR);
-        return PIVOT_FAIL;
-      }
-
-      for (int i = 0; i < ida_mem->ida_Ns; ++i)
-      {
-        DDSetYpFromY(st, dd_mem->dd_state, yyS[i], ypS[i]);
-      }
-
-      if (IDASensReInit(ida_mem, ida_mem->ida_ism, yyS, ypS) < 0)
-      {
-        DDHandleErr(DD_ERR_IDA_ERR);
-        return PIVOT_FAIL;
+        DDHandleErr(SUN_ERR_OP_FAIL);
+        return SUN_ERR_OP_FAIL;
       }
     }
-
-    if (ida_mem->ida_adj)
+    else
     {
-      IDAadjMem ida_adj_mem = ida_mem->ida_adj_mem;
+      /* Normal case: IDA checkpoints were accumulated since the last pivot.
+         Store them in the current DD checkpoint and prepend a fresh one.
+
+         NOTE(oerikss, 2025-04-11): We need to set the internal checkpoint
+         field to NULL to prevent `IDAAdjReInit` from deleting all accumulated
+         checkpoints. We restore these as we integrate the backwards problem
+         over the DD checkpoints. We later take care of deleting the
+         checkpoints in `DDAdjFree`. */
 
       DDckpntMem ck_next  = dd_mem->ck_mem;
       ck_next->ck_t1      = tn;
       ck_next->ida_ck_mem = ida_adj_mem->ck_mem;
 
-      DDckpntMem ck_mem = DDckpntCreate(st, tn, dd_mem->dd_state);
+      DDckpntMem ck_mem = DDckpntCreate(st, tn, state);
       if (ck_mem == NULL)
       {
         DDHandleErr(SUN_ERR_MEM_FAIL);
-        return PIVOT_FAIL;
+        return DD_ERR_IDA_ERR;
       }
 
       ck_mem->ck_next = ck_next;
       dd_mem->ck_mem  = ck_mem;
 
-      /* NOTE(oerikss, 2025-04-11): We need to set the internal chekpoint field
-         to NULL to prevent `IDAAdjReInit` from deleting all accumulated
-         checkpoints. We restore these as we integrate the backwards problem
-         over the DD checkpoints. We later take care of deleting the checkpoints
-         in `DDAdjFree`. */
-
       ida_adj_mem->ck_mem = NULL;
-
-      if (IDAAdjReInit(ida_mem) < 0)
-      {
-        DDHandleErr(DD_ERR_IDA_ERR);
-        return PIVOT_FAIL;
-      }
     }
 
-    return PIVOT_SUCCESS;
+    if (IDAAdjReInit(ida_mem) < 0)
+    {
+      DDHandleErr(DD_ERR_IDA_ERR);
+      return DD_ERR_IDA_ERR;
+    }
   }
 
-  return PIVOT_UNNECESSARY;
+  return SUN_SUCCESS;
 }
 
 /* --------------------------------------------------------------------------

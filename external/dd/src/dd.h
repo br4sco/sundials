@@ -5,6 +5,7 @@
 #include <sundials/sundials_core.h>
 
 #include "matrix.h"
+#include "pivot.h"
 #include "structure.h"
 #include "sundials/sundials_errors.h"
 #include "sundials/sundials_nvector.h"
@@ -41,26 +42,6 @@
  *         occurred and a negative value of a non-recoverable error occurred.
  */
 typedef int DDResFn(sunrealtype t, N_Vector Y, N_Vector R, void* user_data);
-
-/**
- * @brief Jacobian callback function for highest order derivatives (both
- *   equations and variables).
- *
- * given a structural analysis c,d ∈ ℕ[n], * dependent variables y ∈ ℝ[n], scalar
- * residual expressions e ∈ ℝ[n] then this function should compute the n×n
- * Jacobian: dʰe[i]/dy[j]ᵏ, where h = c[i] and k = d[j].
- *
- * @param[in] t is the independent variable.
- * @param[in] Y are the dependent variables and their derivatives.
- * @param[out] J holds the values of the n×n Jacobian. Only non-zero values
- *               needs to written to `J`.
- *
- * @param[inout] user_data points to user-defined data.
- *
- * @return a value `0` on success, a positive values if a recoverable error
- *         occurred and a negative value of a non-recoverable error occurred.
- */
-typedef int DDJacFn0(sunrealtype t, N_Vector Y, SUNMatrix J, void* user_data);
 
 /**
  * @brief Jacobian callback function, type 1, for `DDResFn`. Supports matrix
@@ -367,14 +348,7 @@ DDMem DDCreate(SUNContext);
 void DDFree(DDMem*);
 
 /** @brief Initializes a solver session. */
-int DDInit(DDMem,
-           DAEStruct,
-           sunrealtype,
-           DDJacFn0,
-           DDMatrix,
-           DDResFn,
-           sunrealtype,
-           N_Vector);
+int DDInit(DDMem, DAEStruct, DDResFn, uint8_t*, sunrealtype, N_Vector);
 
 /** @brief Re-initializes a solver session. */
 int DDReInit(DDMem, sunrealtype, N_Vector);
@@ -382,15 +356,8 @@ int DDReInit(DDMem, sunrealtype, N_Vector);
 /** @brief Integrates the DAE. */
 int DDSolve(DDMem, sunrealtype, sunrealtype[static 1], N_Vector, int);
 
-typedef enum PivotResult
-{
-  PIVOT_SUCCESS     = 0,
-  PIVOT_UNNECESSARY = 1,
-  PIVOT_FAIL        = -1
-} PivotResult;
-
-/** @brief Pivots the DAE if necessary */
-PivotResult DDPivot(DDMem);
+/** @brief Sets the DD spec. */
+int DDSetSpec(DDMem, uint8_t*);
 
 /** @brief Frees forward sensitivity related data. */
 void DDSensFree(DDMem);
