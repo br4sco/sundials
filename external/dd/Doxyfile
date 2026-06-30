@@ -1,0 +1,20 @@
+PROJECT_NAME           = "DD: Dummy-Derivative Solver"
+PROJECT_BRIEF          = "High-index DAE solver addon for SUNDIALS/IDAS using dummy derivatives"
+
+OUTPUT_DIRECTORY       = build-dir/docs/dd
+
+INPUT                  = external/dd/src
+FILE_PATTERNS          = *.h
+RECURSIVE              = NO
+
+OPTIMIZE_OUTPUT_FOR_C  = YES
+TYPEDEF_HIDES_STRUCT   = YES
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+
+HAVE_DOT               = NO
+CALL_GRAPH             = NO
+QUIET                  = YES

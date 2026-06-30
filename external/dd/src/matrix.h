@@ -11,7 +11,7 @@
 #include "sundials/sundials_types.h"
 
 /** @file
- * @brief pivot matrix definitions.
+ * @brief Generic matrix abstraction for column-pivoting operations.
  */
 
 /* ==========================================================================
@@ -24,22 +24,22 @@
 
 typedef struct _PIVMatrix_Ops PIVMatrix_Ops;
 
-/** @brief The type of extended generic matrices. */
 typedef struct
 {
   SUNMatrix A;
   const PIVMatrix_Ops* ops;
 } _PIVMatrix;
 
+/** @brief Opaque handle to a pivot matrix. */
 typedef _PIVMatrix* PIVMatrix;
 
-/** @brief Condition number calculation workspace for generic matrices. */
+/** @brief Opaque handle to a pivot matrix workspace. */
 typedef struct _generic_PIVMatrixWorkspace* PIVMatrixWorkspace;
 
-/** @brief Extended matrix workspace id. */
+/** @brief Identifies the type of a PIVMatrixWorkspace. */
 typedef enum
 {
-  PIVMATRIXWS_ROWPIVOT
+  PIVMATRIXWS_ROWPIVOT /**< Workspace holding the subset of rows to pivot on */
 } PIVMatrixWorkspaceID;
 
 struct _generic_PIVMatrixWorkspace
@@ -87,7 +87,18 @@ static inline PIVMatrixWorkspace PIVMatCreateWS(PIVMatrix self)
   return self->ops->createworkspace(self);
 }
 
-/** @brief Pivots underlying matrix columns to the left. */
+/**
+ * @brief Reorders columns of the matrix so the most linearly independent
+ *        ones come first.
+ *
+ * @param[in]    self       Pivot matrix.
+ * @param[in]    ws         Workspace allocated by PIVMatCreateWS().
+ * @param[in]    tol        Pivot tolerance.
+ * @param[in]    n          Number of columns.
+ * @param[inout] colpivots  On entry, the column indices to consider; on
+ *                          return, reordered so the leading columns form a
+ *                          well-conditioned square sub-matrix.
+ */
 static inline SUNErrCode PIVMatPivot(PIVMatrix self,
                                      PIVMatrixWorkspace ws,
                                      sunrealtype tol,
@@ -99,7 +110,18 @@ static inline SUNErrCode PIVMatPivot(PIVMatrix self,
   return self->ops->pivot(self, ws, tol, n, colpivots);
 }
 
-/** @brief Clones a sub-matrix. */
+/**
+ * @brief Allocates a new matrix containing the M×N sub-matrix of `self`
+ *        at the given row and column indices.
+ *
+ * @param[in] self  Source matrix.
+ * @param[in] m     Number of rows in the sub-matrix.
+ * @param[in] rows  Row indices into `self` (length m).
+ * @param[in] n     Number of columns in the sub-matrix.
+ * @param[in] cols  Column indices into `self` (length n).
+ *
+ * @return A newly allocated @ref PIVMatrix, or NULL on failure.
+ */
 static inline PIVMatrix PIVMatCloneSub(const PIVMatrix self,
                                        sunindextype m,
                                        const sunindextype rows[static m],
@@ -111,7 +133,15 @@ static inline PIVMatrix PIVMatCloneSub(const PIVMatrix self,
   return self->ops->clonesub(self, m, rows, n, cols);
 }
 
-/** @brief Copies a sub-matrix. */
+/**
+ * @brief Copies a sub-matrix of `self` into `A`.
+ *
+ * @param[in]  self  Source matrix.
+ * @param[out] A     Destination sub-matrix (must already be allocated,
+ *                   e.g. via PIVMatCloneSub()).
+ * @param[in]  rows  Row indices into `self`.
+ * @param[in]  cols  Column indices into `self`.
+ */
 static inline SUNErrCode PIVCopySub(PIVMatrix self,
                                     PIVMatrix A,
                                     const sunindextype* rows,
@@ -143,10 +173,19 @@ PIVMatrix PIVMatWrapDense(SUNMatrix);
 /** @brief Wraps a sparse Sundials matrix in a pivot matrix. */
 PIVMatrix PIVMatWrapSparse(SUNMatrix);
 
-/** @brief Creates a sparse matrix based on additional structural information. */
-SUNMatrix PIVSparseSUNMatFromStructure(const DDStaticInfo*,
-                                       sunindextype,
-                                       int,
-                                       SUNContext);
+/**
+ * @brief Allocates a sparse SUNMatrix sized for the augmented DAE Jacobian.
+ *
+ * @param[in] si          Static DAE info.
+ * @param[in] nnz         Number of non-zero entries.
+ * @param[in] sparsetype  Storage format: CSR_MAT or CSC_MAT.
+ * @param[in] sunctx      SUNDIALS context.
+ *
+ * @return A newly allocated sparse SUNMatrix, or NULL on failure.
+ */
+SUNMatrix PIVSparseSUNMatFromStructure(const DDStaticInfo* si,
+                                       sunindextype nnz,
+                                       int sparsetype,
+                                       SUNContext sunctx);
 
 #endif

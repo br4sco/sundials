@@ -14,22 +14,22 @@
  * ========================================================================== */
 
 /**
- * @brief Jacobian callback function for highest order derivatives (both
- *   equations and variables).
+ * @brief Jacobian callback for the highest-order sub-system.
  *
- * given a structural analysis c,d ∈ ℕ[n], * dependent variables y ∈ ℝ[n], scalar
- * residual expressions e ∈ ℝ[n] then this function should compute the n×n
- * Jacobian: dʰe[i]/dy[j]ᵏ, where h = c[i] and k = d[j].
+ * Given canonical offsets c, d ∈ ℕ₀ⁿ and residual expressions e₀…eₙ₋₁,
+ * this function must compute the N×N Jacobian J where
  *
- * @param[in] t is the independent variable.
- * @param[in] Y are the dependent variables and their derivatives.
- * @param[out] J holds the values of the n×n Jacobian. Only non-zero values
- *               needs to written to `J`.
+ *   Jᵢⱼ = ∂eᵢ⁽ᶜⁱ⁾/∂yⱼ⁽ᵈʲ⁾.
  *
- * @param[inout] user_data points to user-defined data.
+ * Only non-zero entries need to be written to `J`.
  *
- * @return a value `0` on success, a positive values if a recoverable error
- *         occurred and a negative value of a non-recoverable error occurred.
+ * @param[in]    t         Independent variable.
+ * @param[in]    Y         Augmented state vector (length N_all_orders).
+ * @param[out]   J         N×N Jacobian matrix to populate.
+ * @param[inout] user_data User-defined data pointer.
+ *
+ * @return 0 on success, positive for a recoverable error, negative for a
+ *         non-recoverable error.
  */
 typedef int PIVJacFn0(sunrealtype t, N_Vector Y, SUNMatrix J, void* user_data);
 
@@ -65,8 +65,21 @@ typedef struct
 /** @brief Holds pivoting state */
 typedef _PivMem* PivMem;
 
-/** @brief Creates pivot data based on static DAE info. `jacfn0` is required. */
-PivMem PIVCreate(SUNContext, DDStaticInfo, PIVMatrix, PIVJacFn0);
+/**
+ * @brief Creates pivot memory from static DAE info.
+ *
+ * @param[in] sunctx  SUNDIALS context.
+ * @param[in] si      Static DAE info.
+ * @param[in] J_0     N×N Jacobian matrix (pre-allocated); used as workspace
+ *                    to evaluate @ref PIVJacFn0 and extract sub-matrices.
+ * @param[in] jacfn0  Jacobian callback (required; must not be NULL).
+ *
+ * @return A newly allocated @ref PivMem, or NULL on failure.
+ */
+PivMem PIVCreate(SUNContext sunctx,
+                 DDStaticInfo si,
+                 PIVMatrix J_0,
+                 PIVJacFn0* jacfn0);
 
 /** @brief Sets user data for the Jacobian callback **/
 SUNErrCode PIVSetUserData(PivMem, void*);
@@ -85,10 +98,34 @@ void PIVPrint(PivMem, FILE*);
  * Pivoting
  * -------------------------------------------------------------------------- */
 
-/** @brief Pivots a DAE given its structure and Jacobian, and computes the DD
- *         spec. Sets *spec_changed to SUNTRUE if the spec changed, SUNFALSE
- *         otherwise. Returns a SUNErrCode. */
-SUNErrCode PIVPivot(PivMem, sunrealtype, sunrealtype, N_Vector, sunbooleantype*);
+/**
+ * @brief Evaluates the Jacobian, selects dummy derivatives by pivoting, and
+ *        updates the DD spec.
+ *
+ * At each stage k, M_k variables are identified as algebraically determined
+ * ("known") by pivoting the M_k × N_k sub-Jacobian. Known variables include
+ * both dummy derivatives (differential variables treated algebraically) and
+ * algebraic variables from the overdetermined index-reduced system. The
+ * remaining N_k − M_k variables are true state variables to be integrated.
+ * `pm->spec[j]` counts the number of stages at which variable j is a true
+ * state variable (spec[j] = 0 means j is always algebraically determined).
+ *
+ * @param[in]  pm           Pivot memory.
+ * @param[in]  tol          Pivot tolerance; a column is considered negligible
+ *                          if its magnitude is below tol times the largest
+ *                          column magnitude.
+ * @param[in]  t            Current value of the independent variable.
+ * @param[in]  Y            Current augmented state vector (length N_all_orders).
+ * @param[out] spec_changed Set to SUNTRUE if the spec changed since the last
+ *                          call, SUNFALSE otherwise.
+ *
+ * @return SUN_SUCCESS, or a SUNDIALS error code on failure.
+ */
+SUNErrCode PIVPivot(PivMem pm,
+                    sunrealtype tol,
+                    sunrealtype t,
+                    N_Vector Y,
+                    sunbooleantype* spec_changed);
 
 /** @brief Returns the current dummy derivative spec of this pivot memory */
 uint8_t* PIVGetSpec(PivMem);

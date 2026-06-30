@@ -33,6 +33,8 @@
             bison
             flex
             nixfmt-classic
+            doxygen
+            graphviz
             python-with-packages
           ]);
           nativeBuildInputs = pkgs.sundials.nativeBuildInputs ++ [ ];

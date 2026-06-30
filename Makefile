@@ -36,6 +36,10 @@ $(BUILD_DIR):
 install: $(BUILD_DIR)
 	make -C $(BUILD_DIR) install
 
+.PHONY: docs
+docs:
+	mkdir -p $(BUILD_DIR)/docs/dd && doxygen external/dd/Doxyfile
+
 .PHONY: format
 format:
 	clang-format -i $(shell find external/dd/src external/dd/test -name "*.h" -o -name "*.c")

@@ -197,11 +197,11 @@ typedef struct
  * Assuming a structural analysis d ∈ ℕ[n] of an, possibly high-index, DAE of
  * size n.
  *
+ * @param[in] M is the number of rows that `fn` fills per column.
  * @param[in] fn computes the the j'th M × 1 column of the Jacobian.
  * @param[in] yy_diff_alias_row indicates if it for j holds that `yy[j] = yp[k]`
  *                              for some k in the first-order view of the DAE.
- *
- * @param[in] yy_diff_alias_row indicates if it for j holds that `yy[k] = yp[j]`
+ * @param[in] yp_diff_alias_row indicates if it for j holds that `yy[k] = yp[j]`
  *                              for some k in the first-order view of the DAE.
  *
  * @param[in] t is the independent variable.
@@ -341,114 +341,297 @@ typedef int DDResFnB(sunrealtype t,
 /** @brief Solver session. */
 typedef struct DDMemRec* DDMem;
 
-/** @brief Creates a solver object. */
-DDMem DDCreate(SUNContext);
+/** @brief Creates a solver object. @see IDACreate */
+DDMem DDCreate(SUNContext sunctx);
 
-/** @brief Frees a solver object. */
-void DDFree(DDMem*);
+/** @brief Frees a solver object. @see IDAFree */
+void DDFree(DDMem* dd_mem);
 
-/** @brief Initializes a solver session. */
-int DDInit(DDMem, DDStaticInfo, DDResFn, uint8_t*, sunrealtype, N_Vector);
+/**
+ * @brief Initializes a solver session.
+ *
+ * @param[in] dd_mem  Solver object created by DDCreate().
+ * @param[in] si      Static DAE info.
+ * @param[in] resfn   DAE residual callback.
+ * @param[in] spec    Initial dummy derivative specification (array of length N);
+ *                    see DDSetSpec() for the encoding.
+ * @param[in] t0      Initial value of the independent variable.
+ * @param[in] Y0      Initial augmented state vector (length N_all_orders).
+ *
+ * @return IDA_SUCCESS or an IDA error code.
+ * @see IDAInit
+ */
+int DDInit(DDMem dd_mem,
+           DDStaticInfo si,
+           DDResFn* resfn,
+           uint8_t* spec,
+           sunrealtype t0,
+           N_Vector Y0);
 
-/** @brief Re-initializes a solver session. */
-int DDReInit(DDMem, sunrealtype, N_Vector);
+/**
+ * @brief Re-initializes a solver session with new initial conditions.
+ *
+ * @param[in] dd_mem  Solver object.
+ * @param[in] t0      New initial value of the independent variable.
+ * @param[in] Y0      New initial augmented state vector (length N_all_orders).
+ *
+ * @return IDA_SUCCESS or an IDA error code.
+ * @see IDAReInit
+ */
+int DDReInit(DDMem dd_mem, sunrealtype t0, N_Vector Y0);
 
-/** @brief Integrates the DAE. */
-int DDSolve(DDMem, sunrealtype, sunrealtype[static 1], N_Vector, int);
+/**
+ * @brief Integrates the DAE to a requested output time.
+ *
+ * @param[in]  dd_mem  Solver object.
+ * @param[in]  tout    Output time to integrate towards.
+ * @param[out] tret    Actual time reached.
+ * @param[out] Y       Augmented state vector at tret.
+ * @param[in]  itask   Task flag: IDA_NORMAL to advance to tout, or
+ *                     IDA_ONE_STEP to take a single internal step.
+ *
+ * @return IDA_SUCCESS, IDA_TSTOP_RETURN, or an IDA error code.
+ * @see IDASolve
+ */
+int DDSolve(DDMem dd_mem,
+            sunrealtype tout,
+            sunrealtype tret[static 1],
+            N_Vector Y,
+            int itask);
 
-/** @brief Sets the DD spec. */
-int DDSetSpec(DDMem, uint8_t*);
+/**
+ * @brief Updates the dummy derivative specification and re-initialises the
+ *        solver to reflect the new variable classification.
+ *
+ * @param[in] dd_mem  Solver object.
+ * @param[in] spec    Dummy derivative specification (array of length N).
+ *                    spec[i] = d introduces d alias equations
+ *                    yᵢ⁽⁰⁾' = yᵢ⁽¹⁾, …, yᵢ⁽ᵈ⁻¹⁾' = yᵢ⁽ᵈ⁾, making
+ *                    yᵢ⁽⁰⁾…yᵢ⁽ᵈ⁻¹⁾ true state variables and yᵢ⁽ᵈ⁾ the
+ *                    dummy derivative. spec[i] = 0 means yᵢ is fully
+ *                    algebraically determined.
+ *
+ * @return SUN_SUCCESS or an error code.
+ */
+int DDSetSpec(DDMem dd_mem, uint8_t* spec);
 
-/** @brief Frees forward sensitivity related data. */
-void DDSensFree(DDMem);
+/** @brief Frees forward sensitivity data. @see IDASensFree */
+void DDSensFree(DDMem dd_mem);
 
-/** @brief Forward sensitivity initialization. */
-int DDSensInit(DDMem, int Ns, int, DDSensResFn, N_Vector[static Ns]);
+/**
+ * @brief Initializes forward sensitivity computation.
+ *
+ * @param[in] dd_mem     Solver object.
+ * @param[in] Ns         Number of sensitivity vectors (i.e. number of parameters).
+ * @param[in] ism        Sensitivity method: IDA_SIMULTANEOUS or IDA_STAGGERED.
+ * @param[in] sensresfn  Sensitivity residual callback, or NULL to use the
+ *                       default difference-quotient approximation.
+ * @param[in] yS0        Initial sensitivity vectors (length Ns, each of length
+ *                       N_all_orders).
+ *
+ * @return IDA_SUCCESS or an IDA error code.
+ * @see IDASensInit
+ */
+int DDSensInit(DDMem dd_mem,
+               int Ns,
+               int ism,
+               DDSensResFn* sensresfn,
+               N_Vector yS0[static Ns]);
 
-/** @brief Re-initialize forward sensitivity computation. */
-int DDSensReInit(DDMem, int, N_Vector*);
+/**
+ * @brief Re-initializes forward sensitivity computation.
+ *
+ * @param[in] dd_mem  Solver object.
+ * @param[in] ism     Sensitivity method: IDA_SIMULTANEOUS or IDA_STAGGERED.
+ * @param[in] yS0     New initial sensitivity vectors.
+ *
+ * @return IDA_SUCCESS or an IDA error code.
+ * @see IDASensReInit
+ */
+int DDSensReInit(DDMem dd_mem, int ism, N_Vector* yS0);
 
-/** @brief Integrates the DAE with check-pointing. */
-int DDSolveF(DDMem, sunrealtype, sunrealtype[static 1], N_Vector, int, int[static 1]);
+/**
+ * @brief Integrates the DAE forward with check-pointing for adjoint sensitivity.
+ *
+ * @param[in]  dd_mem  Solver object.
+ * @param[in]  tout    Output time to integrate towards.
+ * @param[out] tret    Actual time reached.
+ * @param[out] Y       Augmented state vector at tret.
+ * @param[in]  itask   Task flag: IDA_NORMAL or IDA_ONE_STEP.
+ * @param[out] ncheck  Number of check-points stored so far.
+ *
+ * @return IDA_SUCCESS, IDA_TSTOP_RETURN, or an IDA error code.
+ * @see IDASolveF
+ */
+int DDSolveF(DDMem dd_mem,
+             sunrealtype tout,
+             sunrealtype tret[static 1],
+             N_Vector Y,
+             int itask,
+             int ncheck[static 1]);
 
-/** @brief Calculates consistent initial values. */
-int DDCalcIC(DDMem, int, sunrealtype);
+/**
+ * @brief Computes consistent initial values for the augmented DAE.
+ *
+ * @param[in] dd_mem  Solver object.
+ * @param[in] icopt   IDA_YA_YDP_INIT to compute the algebraic components of Y
+ *                    and all components of Yp, or IDA_Y_INIT to compute all
+ *                    components of Y. Algebraic vs. differential is determined
+ *                    by the current DD specification; see DDSetSpec().
+ * @param[in] tout1   First output time, used to estimate the scale of t.
+ *
+ * @return IDA_SUCCESS or an IDA error code.
+ * @see IDACalcIC
+ */
+int DDCalcIC(DDMem dd_mem, int icopt, sunrealtype tout1);
 
-/** @brief Initializes an adjoint problem. */
-int DDAdjInit(DDMem, long, int);
+/**
+ * @brief Initializes adjoint sensitivity computation.
+ *
+ * @param[in] dd_mem  Solver object.
+ * @param[in] steps   Number of integration steps between check-points.
+ * @param[in] interp  Interpolation type: IDA_POLYNOMIAL or IDA_HERMITE.
+ *
+ * @return IDA_SUCCESS or an IDA error code.
+ * @see IDAAdjInit
+ */
+int DDAdjInit(DDMem dd_mem, long steps, int interp);
 
-/** @brief Frees data associated with the adjoint problem. */
-void DDAdjFree(DDMem);
+/** @brief Frees adjoint sensitivity data. @see IDAAdjFree */
+void DDAdjFree(DDMem dd_mem);
 
-/** @brief Creates a backwards problem. */
-int DDCreateB(DDMem, int[static 1]);
+/** @brief Creates a backward problem and returns its index. @see IDACreateB */
+int DDCreateB(DDMem dd_mem, int indexB[static 1]);
 
-/** @brief Initializes backwards problem. */
-int DDInitB(DDMem, int, DDResFnB, sunrealtype, N_Vector, N_Vector);
+/**
+ * @brief Initializes a backward problem.
+ *
+ * @param[in] dd_mem   Solver object.
+ * @param[in] indexB   Index of the backward problem returned by DDCreateB().
+ * @param[in] resfnB   Adjoint residual callback.
+ * @param[in] tB0      Initial time for the backward problem (typically the
+ *                     final forward time).
+ * @param[in] yyB0     Initial state vector for the backward problem.
+ * @param[in] ypB0     Initial derivative vector for the backward problem.
+ *
+ * @return IDA_SUCCESS or an IDA error code.
+ * @see IDAInitB
+ */
+int DDInitB(DDMem dd_mem,
+            int indexB,
+            DDResFnB* resfnB,
+            sunrealtype tB0,
+            N_Vector yyB0,
+            N_Vector ypB0);
 
-/** @brief Calculate consistent initial values for the backwards problem. */
-int DDCalcICB(DDMem, int, sunrealtype, N_Vector);
+/**
+ * @brief Computes consistent initial values for a backward problem.
+ *
+ * @param[in]    dd_mem  Solver object.
+ * @param[in]    indexB  Index of the backward problem.
+ * @param[in]    tBout1  First output time, used to estimate the scale of t.
+ * @param[inout] yyB     State vector; corrected values on return.
+ *
+ * @return IDA_SUCCESS or an IDA error code.
+ * @see IDACalcICB
+ */
+int DDCalcICB(DDMem dd_mem, int indexB, sunrealtype tBout1, N_Vector yyB);
 
-/** @brief Solve the backwards problems. */
-int DDSolveB(DDMem, sunrealtype, int);
+/**
+ * @brief Integrates all backward problems towards tBout.
+ *
+ * @param[in] dd_mem  Solver object.
+ * @param[in] tBout   Target time for the backward integration.
+ * @param[in] itaskB  Task flag: IDA_NORMAL or IDA_ONE_STEP.
+ *
+ * @return IDA_SUCCESS or an IDA error code.
+ * @see IDASolveB
+ */
+int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB);
 
 /* --------------------------------------------------------------------------
  * Setters and Getters
  * -------------------------------------------------------------------------- */
 
-/** @brief Gets the associated IDA memory. This memory should not be modified.
+/** @brief Returns the underlying IDA memory (read-only). */
+void* DDGetIDAMem(DDMem dd_mem);
+
+/** @brief Sets the linear solver. @see IDASetLinearSolver */
+int DDSetLinearSolver(DDMem dd_mem, SUNLinearSolver LS, SUNMatrix J);
+
+/** @brief Sets scalar absolute and relative tolerances. @see IDASStolerances */
+int DDSSTolerances(DDMem dd_mem, sunrealtype reltol, sunrealtype abstol);
+
+/** @brief Sets the stop time. @see IDASetStopTime */
+int DDSetStopTime(DDMem dd_mem, sunrealtype tstop);
+
+/** @brief Sets the user data pointer passed to callbacks. @see IDASetUserData */
+int DDSetUserData(DDMem dd_mem, void* user_data);
+
+/** @brief Returns forward sensitivity vectors at the current time. @see IDAGetSens */
+int DDGetSens(DDMem dd_mem, sunrealtype* tret, N_Vector* yS);
+
+/** @brief Returns the name of an IDA return flag. Caller must free the result. @see IDAGetReturnFlagName */
+char* DDGetReturnFlagName(long int flag);
+
+/** @brief Returns the corrected initial state vector. @see IDAGetConsistentIC */
+int DDGetConsistentIC(DDMem dd_mem, N_Vector yy0_mod);
+
+/** @brief Returns the corrected initial sensitivity vectors. @see IDAGetSensConsistentIC */
+int DDGetSensConsistentIC(DDMem dd_mem, N_Vector* yyS0_mod);
+
+/** @brief Sets sensitivity parameters. @see IDASetSensParams */
+int DDSetSensParams(DDMem dd_mem, sunrealtype* p, sunrealtype* pbar, int* plist);
+
+/** @brief Estimates sensitivity tolerances from state tolerances. @see IDASensEEtolerances */
+int DDSensEEtolerances(DDMem dd_mem);
+
+/** @brief Sets the linear solver for a backward problem. @see IDASetLinearSolverB */
+int DDSetLinearSolverB(DDMem dd_mem, int indexB, SUNLinearSolver LS, SUNMatrix J);
+
+/** @brief Sets the Jacobian callback for a matrix-based linear solver. @see IDASetJacFn */
+int DDSetJacFn(DDMem dd_mem, DDLsJacFn jacfn);
+
+/** @brief Sets scalar tolerances for a backward problem. @see IDASStolerancesB */
+int DDSStolerancesB(DDMem dd_mem,
+                    int indexB,
+                    sunrealtype reltol,
+                    sunrealtype abstol);
+
+/** @brief Sets the user data pointer for a backward problem. @see IDASetUserDataB */
+int DDSetUserDataB(DDMem dd_mem, int indexB, void* user_data);
+
+/** @brief Sets the differential/algebraic ID vector for a backward problem. @see IDASetIdB */
+int DDSetIdB(DDMem dd_mem, int indexB, N_Vector id);
+
+/** @brief Returns the current solution of a backward problem. @see IDAGetB */
+int DDGetB(DDMem dd_mem,
+           int indexB,
+           sunrealtype tret[static 1],
+           N_Vector yy,
+           N_Vector yp);
+
+/** @brief Returns the corrected initial values for a backward problem. @see IDAGetConsistentICB */
+int DDGetConsistentICB(DDMem dd_mem,
+                       int indexB,
+                       N_Vector yyB0_mod,
+                       N_Vector ypB0_mod);
+
+/**
+ * @brief Returns the current dummy derivative specification (length N).
+ *
+ * The returned pointer is owned by `dd_mem` and remains valid until the next
+ * call to DDSetSpec() or DDFree(). See DDSetSpec() for the encoding.
  */
-void* DDGetIDAMem(DDMem);
+const uint8_t* DDGetSpec(DDMem dd_mem);
 
-/** @brief Sets linear solver. */
-int DDSetLinearSolver(DDMem, SUNLinearSolver, SUNMatrix);
-
-/** @brief Set solver tolerances. */
-int DDSSTolerances(DDMem, sunrealtype, sunrealtype);
-
-/** @brief Sets the stop-time for the independent variable */
-int DDSetStopTime(DDMem, sunrealtype);
-
-/** @brief Sets user data. */
-int DDSetUserData(DDMem, void*);
-
-/** @brief Get forward mode sensitivities. */
-int DDGetSens(DDMem, sunrealtype*, N_Vector*);
-
-/** @brief Get return flag name. The caller is responsible for de-allocation. */
-char* DDGetReturnFlagName(long int);
-
-/** @brief Get consistent initial values. */
-int DDGetConsistentIC(DDMem, N_Vector);
-
-/** @brief Get consistent initial sensitivities. */
-int DDGetSensConsistentIC(DDMem, N_Vector*);
-
-/** @brief Set sensitivity parameters. */
-int DDSetSensParams(DDMem, sunrealtype*, sunrealtype*, int*);
-
-/** @brief Compute sensitivity tolerances based on DAE state tolerances. */
-int DDSensEEtolerances(DDMem);
-
-/** @brief Sets linear solver for a backwards problem. */
-int DDSetLinearSolverB(DDMem, int, SUNLinearSolver, SUNMatrix);
-
-/** @brief Sets the Jacobian function for matrix-based linear solver. */
-int DDSetJacFn(DDMem, DDLsJacFn);
-
-/** @brief Sets tolerances for a backwards problem. */
-int DDSStolerancesB(DDMem, int, sunrealtype, sunrealtype);
-
-/** @brief Sets user data for a backwards problem. */
-int DDSetUserDataB(DDMem, int, void*);
-
-/** @brief Sets ID vector for a backwards problem. */
-int DDSetIdB(DDMem, int, N_Vector);
-
-/** @brief Get a current backward solution. */
-int DDGetB(DDMem, int, sunrealtype[static 1], N_Vector, N_Vector);
-
-/** @brief Get corrected initial values for a backwards problem. */
-int DDGetConsistentICB(DDMem, int, N_Vector, N_Vector);
+/**
+ * @brief Returns the IDA differential/algebraic ID vector derived from the
+ *        current DD specification.
+ *
+ * ID[j] = 1.0 for differential variables, 0.0 for algebraic variables, as
+ * determined by the current spec. The returned vector is owned by `dd_mem`.
+ */
+N_Vector DDGetId(DDMem dd_mem);
 
 #endif

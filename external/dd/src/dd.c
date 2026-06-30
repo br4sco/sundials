@@ -1571,6 +1571,28 @@ void* DDGetIDAMem(DDMem dd_mem)
   return dd_mem->ida_mem;
 }
 
+const uint8_t* DDGetSpec(DDMem dd_mem)
+{
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return NULL;
+  }
+
+  return dd_mem->dd_spec;
+}
+
+N_Vector DDGetId(DDMem dd_mem)
+{
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return NULL;
+  }
+
+  return dd_mem->dd_id;
+}
+
 int DDSetLinearSolver(DDMem dd_mem, SUNLinearSolver LS, SUNMatrix A)
 {
   if (dd_mem == NULL)
