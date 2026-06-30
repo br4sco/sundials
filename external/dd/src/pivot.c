@@ -12,7 +12,7 @@
 #include "sundials/sundials_errors.h"
 #include "sundials/sundials_types.h"
 
-PivMem PIVCreate(SUNContext sunctx, DDStaticInfo si, DDMatrix J_0, DDJacFn0 jacfn0)
+PivMem PIVCreate(SUNContext sunctx, DDStaticInfo si, PIVMatrix J_0, PIVJacFn0 jacfn0)
 {
   SUNFunctionBegin(sunctx);
 
@@ -45,10 +45,10 @@ PivMem PIVCreate(SUNContext sunctx, DDStaticInfo si, DDMatrix J_0, DDJacFn0 jacf
   pm->vars_k = malloc(K * sizeof(*pm->vars_k));
   SUNAssertNull(pm->vars_k, SUN_ERR_MALLOC_FAIL);
 
-  pm->J_k = malloc(K * sizeof(DDMatrix*));
+  pm->J_k = malloc(K * sizeof(PIVMatrix*));
   SUNAssertNull(pm->J_k, SUN_ERR_MALLOC_FAIL);
 
-  pm->wss = malloc(K * sizeof(DDMatrixWorkspace*));
+  pm->wss = malloc(K * sizeof(PIVMatrixWorkspace*));
   SUNAssertNull(pm->wss, SUN_ERR_MALLOC_FAIL);
 
   pm->known_k_flat = calloc(K * si_N, sizeof(*pm->known_k_flat));
@@ -74,11 +74,11 @@ PivMem PIVCreate(SUNContext sunctx, DDStaticInfo si, DDMatrix J_0, DDJacFn0 jacf
     }
     else
     {
-      DDMatrix A_sub = DDMatCloneSub(J_0, M, I, N, J);
+      PIVMatrix A_sub = PIVMatCloneSub(J_0, M, I, N, J);
       SUNCheckLastErrNull();
       pm->J_k[k] = A_sub;
 
-      DDMatrixWorkspace ws = DDMatCreateWS(A_sub);
+      PIVMatrixWorkspace ws = PIVMatCreateWS(A_sub);
       SUNCheckLastErrNull();
       pm->wss[k] = ws;
     }
@@ -121,11 +121,11 @@ void PIVDestroy(PivMem* pm_ptr)
   {
     for (size_t k = 0; k < K; ++k)
     {
-      DDMatrix submat = pm->J_k[k];
+      PIVMatrix submat = pm->J_k[k];
       if (submat)
       {
-        SUNMatDestroy(DDMatGetSUNMat(submat));
-        DDMatDestroy(submat);
+        SUNMatDestroy(PIVMatGetSUNMat(submat));
+        PIVMatDestroy(submat);
       }
     }
     free(pm->J_k);
@@ -133,7 +133,7 @@ void PIVDestroy(PivMem* pm_ptr)
 
   if (pm->wss != NULL)
   {
-    for (size_t k = 0; k < K; ++k) { DDMatWSDestroy(pm->wss[k]); }
+    for (size_t k = 0; k < K; ++k) { PIVMatWSDestroy(pm->wss[k]); }
     free(pm->wss);
   }
 
@@ -189,7 +189,7 @@ SUNErrCode PIVPivot(PivMem pm,
 
   PDReset(pm);
 
-  SUNAssert(pm->jacfn0(t, Y, DDMatGetSUNMat(pm->J_0), pm->user_data) >= 0,
+  SUNAssert(pm->jacfn0(t, Y, PIVMatGetSUNMat(pm->J_0), pm->user_data) >= 0,
             SUN_ERR_OP_FAIL);
 
   for (uint8_t k = 0; k < si->K; ++k)
@@ -238,11 +238,11 @@ SUNErrCode PIVPivot(PivMem pm,
         sunindextype* pm_vars = pm->vars_k[k];
         memcpy(pm_vars, vars, N * sizeof(*pm_vars));
 
-        DDMatrix J_k = pm->J_k[k];
-        SUNCheckCall(DDCopySub(pm->J_0, J_k, eqns, pm_vars));
+        PIVMatrix J_k = pm->J_k[k];
+        SUNCheckCall(PIVCopySub(pm->J_0, J_k, eqns, pm_vars));
 
-        const DDMatrixWorkspace ws = pm->wss[k];
-        SUNCheckCall(DDMatPivot(J_k, ws, tol, N, pm_vars));
+        const PIVMatrixWorkspace ws = pm->wss[k];
+        SUNCheckCall(PIVMatPivot(J_k, ws, tol, N, pm_vars));
 
         for (sunindextype n = 0; n < N; ++n)
         {
@@ -295,6 +295,8 @@ SUNErrCode PIVPivot(PivMem pm,
 
   return SUN_SUCCESS;
 }
+
+uint8_t* PIVGetSpec(PivMem pm) { return pm->spec; }
 
 /* void PSPrintSubmat(const Structure si[static 1], const PivMem pm[static 1], */
 /*                    uint8_t k, FILE* file) */

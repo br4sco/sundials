@@ -12,13 +12,13 @@ int main(void)
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
   sunindextype i, j, k;
-  DDStaticInfo si = DDstaticInfoCreate(CTX,
-                          PENDULUM_N,
-                          PENDULUM_C,
-                          PENDULUM_D,
-                          PENDULUM_VAR_IDX_MAP,
-                          NULL,
-                          NULL);
+  DDStaticInfo si = DDStaticInfoCreate(CTX,
+                                       PENDULUM_N,
+                                       PENDULUM_C,
+                                       PENDULUM_D,
+                                       PENDULUM_VAR_IDX_MAP,
+                                       NULL,
+                                       NULL);
 
   TEST_ASSERT(si != NULL);
 
@@ -102,7 +102,7 @@ int main(void)
   TEST_ASSERT(vars[2] == j);
   TEST_ASSERT(DDSI_VAR_ORDER(si, k, j) == 0);
 
-  DDstaticInfoDestroy(si);
+  DDStaticInfoDestroy(si);
 
   return EXIT_SUCCESS;
 }

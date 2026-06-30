@@ -14,7 +14,7 @@ int main(void)
 {
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
-  DDStaticInfo si = DDstaticInfoCreate(CTX,
+  DDStaticInfo si = DDStaticInfoCreate(CTX,
                                        LINSYS_N,
                                        LINSYS_C,
                                        LINSYS_D,
@@ -23,11 +23,11 @@ int main(void)
                                        NULL);
 
   TEST_ASSERT(si != NULL);
-  SUNMatrix J_0 = SUNDenseMatrix(LINSYS_N, LINSYS_N, CTX);
-  TEST_ASSERT(J_0 != NULL);
-  DDMatrix jac = DDMatWrapDense(J_0);
-  TEST_ASSERT(jac != NULL);
-  PivMem pm = PIVCreate(CTX, si, jac, LinsysJacf0);
+  SUNMatrix J0 = SUNDenseMatrix(LINSYS_N, LINSYS_N, CTX);
+  TEST_ASSERT(J0 != NULL);
+  PIVMatrix pJ0 = PIVMatWrapDense(J0);
+  TEST_ASSERT(pJ0 != NULL);
+  PivMem pm = PIVCreate(CTX, si, pJ0, LinsysJacf0);
   TEST_ASSERT(pm != NULL);
 
   N_Vector Y = N_VNew_Serial(si->N_all_orders, CTX);
@@ -70,7 +70,7 @@ int main(void)
   DDDAEState state = DDDAEStateCreate(si);
   TEST_ASSERT(state != NULL)
 
-  TEST_ASSERT(DDDAEStateUpdate(si, pm->spec, state) == SUN_SUCCESS);
+  TEST_ASSERT(DDDAEStateUpdate(si, PIVGetSpec(pm), state) == SUN_SUCCESS);
 
   Pair_sunindextype* aliases = state->diff_var_aliases;
   TEST_ASSERT(aliases[0].fst == 3);
@@ -96,10 +96,10 @@ int main(void)
   TEST_ASSERT(yp[5] == 10);
 
   PIVDestroy(&pm);
-  DDstaticInfoDestroy(si);
+  DDStaticInfoDestroy(si);
   N_VDestroy(Y);
-  SUNMatDestroy(J_0);
-  DDMatDestroy(jac);
+  SUNMatDestroy(J0);
+  PIVMatDestroy(pJ0);
   DDDAEStateDestroy(&state);
 
   return EXIT_SUCCESS;

@@ -15,13 +15,13 @@ int main(void)
   for (sunindextype i = 0; i < SM_LDATA_D(A); ++i) { SM_DATA_D(A)[i] = i + 1; }
   sunindextype rows[] = {1, 2, 3};
   sunindextype cols[] = {1, 2};
-  DDMatrix B          = DDMatWrapDense(A);
+  PIVMatrix B         = PIVMatWrapDense(A);
   TEST_ASSERT(B != NULL);
 
-  DDMatrix C = DDMatCloneSub(B, 3, rows, 2, cols);
+  PIVMatrix C = PIVMatCloneSub(B, 3, rows, 2, cols);
   TEST_ASSERT(C != NULL);
 
-  SUNMatrix D = DDMatGetSUNMat(C);
+  SUNMatrix D = PIVMatGetSUNMat(C);
   TEST_ASSERT(D != NULL);
   TEST_ASSERT(SM_ROWS_D(D) == 3);
   TEST_ASSERT(SM_COLUMNS_D(D) == 2);
@@ -31,8 +31,8 @@ int main(void)
   TEST_ASSERT(SM_ELEMENT_D(D, 0, 1) == 10);
   TEST_ASSERT(SM_ELEMENT_D(D, 1, 1) == 11);
   TEST_ASSERT(SM_ELEMENT_D(D, 2, 1) == 12);
-  DDMatDestroy(B);
-  DDMatDestroy(C);
+  PIVMatDestroy(B);
+  PIVMatDestroy(C);
   SUNMatDestroy(A);
 
   return EXIT_SUCCESS;

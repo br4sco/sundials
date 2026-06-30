@@ -11,113 +11,113 @@
 #include "sundials/sundials_types.h"
 
 /** @file
- * @brief DD matrix definitions.
+ * @brief pivot matrix definitions.
  */
 
 /* ==========================================================================
- * Generic DD Matrix
+ * Generic Pivot Matrix
  * ========================================================================== */
 
 /* --------------------------------------------------------------------------
- * Generic DD Matrices and Operations
+ * Generic Pivot Matrices and Operations
  * -------------------------------------------------------------------------- */
 
-typedef struct _DDMatrix_Ops DDMatrix_Ops;
+typedef struct _PIVMatrix_Ops PIVMatrix_Ops;
 
 /** @brief The type of extended generic matrices. */
 typedef struct
 {
   SUNMatrix A;
-  const DDMatrix_Ops* ops;
-} _DDMatrix;
+  const PIVMatrix_Ops* ops;
+} _PIVMatrix;
 
-typedef _DDMatrix* DDMatrix;
+typedef _PIVMatrix* PIVMatrix;
 
 /** @brief Condition number calculation workspace for generic matrices. */
-typedef struct _generic_DDMatrixWorkspace* DDMatrixWorkspace;
+typedef struct _generic_PIVMatrixWorkspace* PIVMatrixWorkspace;
 
 /** @brief Extended matrix workspace id. */
 typedef enum
 {
-  DDMATRIXWS_ROWPIVOT
-} DDMatrixWorkspaceID;
+  PIVMATRIXWS_ROWPIVOT
+} PIVMatrixWorkspaceID;
 
-struct _generic_DDMatrixWorkspace
+struct _generic_PIVMatrixWorkspace
 {
-  DDMatrixWorkspaceID id;
+  PIVMatrixWorkspaceID id;
   void* content;
-  void (*destroy)(DDMatrixWorkspace);
+  void (*destroy)(PIVMatrixWorkspace);
 };
 
 /** @brief API of extended generic matrices. */
-struct _DDMatrix_Ops
+struct _PIVMatrix_Ops
 {
-  DDMatrixWorkspace (*const createworkspace)(DDMatrix);
-  SUNErrCode (*const pivot)(DDMatrix,
-                            DDMatrixWorkspace,
+  PIVMatrixWorkspace (*const createworkspace)(PIVMatrix);
+  SUNErrCode (*const pivot)(PIVMatrix,
+                            PIVMatrixWorkspace,
                             sunrealtype,
                             sunindextype n,
                             sunindextype[static n]);
-  DDMatrix (*const clonesub)(DDMatrix,
-                             sunindextype m,
-                             const sunindextype[static m],
-                             sunindextype n,
-                             const sunindextype[static n]);
-  SUNErrCode (*const copysub)(DDMatrix,
-                              DDMatrix,
+  PIVMatrix (*const clonesub)(PIVMatrix,
+                              sunindextype m,
+                              const sunindextype[static m],
+                              sunindextype n,
+                              const sunindextype[static n]);
+  SUNErrCode (*const copysub)(PIVMatrix,
+                              PIVMatrix,
                               const sunindextype*,
                               const sunindextype*);
 };
 
 /* --------------------------------------------------------------------------
- * Generic DD Matrix Interface
+ * Generic Pivot Matrix Interface
  * -------------------------------------------------------------------------- */
 
 /** @brief Destroys extended matrix. */
-void DDMatDestroy(DDMatrix);
+void PIVMatDestroy(PIVMatrix);
 
 /** @brief Returns underlying Sundials matrix. */
-static inline SUNMatrix DDMatGetSUNMat(DDMatrix self) { return self->A; }
+static inline SUNMatrix PIVMatGetSUNMat(PIVMatrix self) { return self->A; }
 
 /** @brief Create extended matrix workspace. */
-static inline DDMatrixWorkspace DDMatCreateWS(DDMatrix self)
+static inline PIVMatrixWorkspace PIVMatCreateWS(PIVMatrix self)
 {
-  SUNFunctionBegin(DDMatGetSUNMat(self)->sunctx);
+  SUNFunctionBegin(PIVMatGetSUNMat(self)->sunctx);
   SUNCheckNull(self->ops->createworkspace, SUN_ERR_NOT_IMPLEMENTED);
   return self->ops->createworkspace(self);
 }
 
 /** @brief Pivots underlying matrix columns to the left. */
-static inline SUNErrCode DDMatPivot(DDMatrix self,
-                                    DDMatrixWorkspace ws,
-                                    sunrealtype tol,
-                                    sunindextype n,
-                                    sunindextype colpivots[static n])
+static inline SUNErrCode PIVMatPivot(PIVMatrix self,
+                                     PIVMatrixWorkspace ws,
+                                     sunrealtype tol,
+                                     sunindextype n,
+                                     sunindextype colpivots[static n])
 {
-  SUNFunctionBegin(DDMatGetSUNMat(self)->sunctx);
+  SUNFunctionBegin(PIVMatGetSUNMat(self)->sunctx);
   SUNCheck(self->ops->pivot, SUN_ERR_NOT_IMPLEMENTED);
   return self->ops->pivot(self, ws, tol, n, colpivots);
 }
 
 /** @brief Clones a sub-matrix. */
-static inline DDMatrix DDMatCloneSub(const DDMatrix self,
-                                     sunindextype m,
-                                     const sunindextype rows[static m],
-                                     sunindextype n,
-                                     const sunindextype cols[static n])
+static inline PIVMatrix PIVMatCloneSub(const PIVMatrix self,
+                                       sunindextype m,
+                                       const sunindextype rows[static m],
+                                       sunindextype n,
+                                       const sunindextype cols[static n])
 {
-  SUNFunctionBegin(DDMatGetSUNMat(self)->sunctx);
+  SUNFunctionBegin(PIVMatGetSUNMat(self)->sunctx);
   SUNCheckNull(self->ops->clonesub, SUN_ERR_NOT_IMPLEMENTED);
   return self->ops->clonesub(self, m, rows, n, cols);
 }
 
 /** @brief Copies a sub-matrix. */
-static inline SUNErrCode DDCopySub(DDMatrix self,
-                                   DDMatrix A,
-                                   const sunindextype* rows,
-                                   const sunindextype* cols)
+static inline SUNErrCode PIVCopySub(PIVMatrix self,
+                                    PIVMatrix A,
+                                    const sunindextype* rows,
+                                    const sunindextype* cols)
 {
-  SUNFunctionBegin(DDMatGetSUNMat(self)->sunctx);
+  SUNFunctionBegin(PIVMatGetSUNMat(self)->sunctx);
   SUNCheck(self->ops->copysub, SUN_ERR_NOT_IMPLEMENTED);
   return self->ops->copysub(self, A, rows, cols);
 }
@@ -127,26 +127,26 @@ static inline SUNErrCode DDCopySub(DDMatrix self,
  * -------------------------------------------------------------------------- */
 
 /** @brief Destroys extended matrix workspace. */
-void DDMatWSDestroy(DDMatrixWorkspace);
+void PIVMatWSDestroy(PIVMatrixWorkspace);
 
 /* ==========================================================================
  * Dense DD Matrix
  * ========================================================================== */
 
-/** @brief Wraps a dense Sundials matrix in a DD matrix. */
-DDMatrix DDMatWrapDense(SUNMatrix);
+/** @brief Wraps a dense Sundials matrix in a pivot matrix. */
+PIVMatrix PIVMatWrapDense(SUNMatrix);
 
 /* ==========================================================================
  * Sparse DD Matrix
  * ========================================================================== */
 
-/** @brief Wraps a sparse Sundials matrix in a DD matrix. */
-DDMatrix DDMatWrapSparse(SUNMatrix);
+/** @brief Wraps a sparse Sundials matrix in a pivot matrix. */
+PIVMatrix PIVMatWrapSparse(SUNMatrix);
 
 /** @brief Creates a sparse matrix based on additional structural information. */
-SUNMatrix DDSparseSUNMatFromStructure(const DDStaticInfo*,
-                                      sunindextype,
-                                      int,
-                                      SUNContext);
+SUNMatrix PIVSparseSUNMatFromStructure(const DDStaticInfo*,
+                                       sunindextype,
+                                       int,
+                                       SUNContext);
 
 #endif

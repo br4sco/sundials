@@ -45,7 +45,7 @@ int main(int argc, char* argv[])
   const char* eqn_names[] = {"f₁", "f₂"};
   const char* var_names[] = {"x", "y"};
 
-  DDStaticInfo si = DDstaticInfoCreate(sunctx,
+  DDStaticInfo si = DDStaticInfoCreate(sunctx,
                                        LOTKA_VOLTERRA_N,
                                        LOTKA_VOLTERRA_C,
                                        LOTKA_VOLTERRA_D,
@@ -61,8 +61,8 @@ int main(int argc, char* argv[])
   SUNMatrix J0 = SUNDenseMatrix(si->N, si->N, sunctx);
   TEST_ASSERT(J0);
 
-  DDMatrix dd_J0 = DDMatWrapDense(J0);
-  TEST_ASSERT(dd_J0);
+  PIVMatrix pJ0 = PIVMatWrapDense(J0);
+  TEST_ASSERT(pJ0);
   N_Vector Y = N_VNew_Serial(N, sunctx);
   TEST_ASSERT(Y);
 
@@ -89,7 +89,7 @@ int main(int argc, char* argv[])
   }
 
   /* Create pivot memory and compute initial spec. */
-  PivMem pm = PIVCreate(sunctx, si, dd_J0, LotkaVolterraJacf0);
+  PivMem pm = PIVCreate(sunctx, si, pJ0, LotkaVolterraJacf0);
   TEST_ASSERT(pm);
   TEST_ASSERT(PIVSetUserData(pm, &p) == SUN_SUCCESS);
   sunbooleantype spec_changed;
@@ -99,7 +99,7 @@ int main(int argc, char* argv[])
   DDMem dd_mem = DDCreate(sunctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(DDInit(dd_mem, si, LotkaVolterraRes, pm->spec, t0, Y) ==
+  TEST_ASSERT(DDInit(dd_mem, si, LotkaVolterraRes, PIVGetSpec(pm), t0, Y) ==
               IDA_SUCCESS);
 
   TEST_ASSERT(
@@ -184,7 +184,7 @@ int main(int argc, char* argv[])
     TEST_ASSERT(PIVPivot(pm, ZERO, tout, Y, &spec_changed) == SUN_SUCCESS);
     if (spec_changed)
     {
-      TEST_ASSERT(DDSetSpec(dd_mem, pm->spec) == SUN_SUCCESS);
+      TEST_ASSERT(DDSetSpec(dd_mem, PIVGetSpec(pm)) == SUN_SUCCESS);
     }
 
     const sunrealtype x = LV_Ith(Y, 0, 0), y = LV_Ith(Y, 1, 0);
@@ -223,10 +223,10 @@ int main(int argc, char* argv[])
   /* Cleanup */
   DDFree(&dd_mem);
   PIVDestroy(&pm);
-  DDMatDestroy(dd_J0);
+  PIVMatDestroy(pJ0);
   N_VDestroy(Y);
   N_VDestroyVectorArray(YS, LOTKA_VOLTERRA_NP);
-  DDstaticInfoDestroy(si);
+  DDStaticInfoDestroy(si);
   SUNContext_Free(&sunctx);
   SUNLinSolFree(LS);
   SUNMatDestroy(J);

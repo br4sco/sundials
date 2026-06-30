@@ -4,7 +4,7 @@
 
 #include "static_info.h"
 
-void DDstaticInfoDestroy(DDStaticInfo si)
+void DDStaticInfoDestroy(DDStaticInfo si)
 {
   if (si)
   {
@@ -69,7 +69,7 @@ void DDstaticInfoDestroy(DDStaticInfo si)
   }
 }
 
-DDStaticInfo DDstaticInfoCreate(SUNContext sunctx,
+DDStaticInfo DDStaticInfoCreate(SUNContext sunctx,
                                 sunindextype N,
                                 const uint8_t eqnofs[static N],
                                 const uint8_t varofs[static N],
@@ -107,27 +107,27 @@ DDStaticInfo DDstaticInfoCreate(SUNContext sunctx,
   si->eqnofs = malloc(N * sizeof(uint8_t));
   if (si->eqnofs == NULL)
   {
-    DDstaticInfoDestroy(si);
+    DDStaticInfoDestroy(si);
     return NULL;
   }
 
   si->varofs = malloc(N * sizeof(uint8_t));
   if (si->varofs == NULL)
   {
-    DDstaticInfoDestroy(si);
+    DDStaticInfoDestroy(si);
     return NULL;
   }
 
   si->var_deriv_chains = malloc(N * sizeof(*si->var_deriv_chains));
   if (si->var_deriv_chains == NULL)
   {
-    DDstaticInfoDestroy(si);
+    DDStaticInfoDestroy(si);
     return NULL;
   }
   si->var_deriv_chains_flat = malloc(si->N_all_orders * sizeof(sunindextype));
   if (si->var_deriv_chains_flat == NULL)
   {
-    DDstaticInfoDestroy(si);
+    DDStaticInfoDestroy(si);
     return NULL;
   }
   sunindextype ofs = 0;
@@ -144,42 +144,42 @@ DDStaticInfo DDstaticInfoCreate(SUNContext sunctx,
   si->M_k = calloc(K, sizeof(sunindextype));
   if (si->M_k == NULL)
   {
-    DDstaticInfoDestroy(si);
+    DDStaticInfoDestroy(si);
     return NULL;
   }
 
   si->N_k = calloc(K, sizeof(sunindextype));
   if (si->N_k == NULL)
   {
-    DDstaticInfoDestroy(si);
+    DDStaticInfoDestroy(si);
     return NULL;
   }
 
   si->eqns_k = malloc(K * sizeof(sunindextype*));
   if (si->eqns_k == NULL)
   {
-    DDstaticInfoDestroy(si);
+    DDStaticInfoDestroy(si);
     return NULL;
   }
 
   si->vars_k = malloc(K * sizeof(sunindextype*));
   if (si->vars_k == NULL)
   {
-    DDstaticInfoDestroy(si);
+    DDStaticInfoDestroy(si);
     return NULL;
   }
 
   si->eqns_k_flat = malloc(si->M_all_orders * sizeof(sunindextype));
   if (si->eqns_k_flat == NULL)
   {
-    DDstaticInfoDestroy(si);
+    DDStaticInfoDestroy(si);
     return NULL;
   }
 
   si->vars_k_flat = malloc(si->N_all_orders * sizeof(sunindextype));
   if (si->vars_k_flat == NULL)
   {
-    DDstaticInfoDestroy(si);
+    DDStaticInfoDestroy(si);
     return NULL;
   }
 
@@ -219,7 +219,7 @@ DDStaticInfo DDstaticInfoCreate(SUNContext sunctx,
   return si;
 }
 
-void DDstaticInfoPrint(DDStaticInfo si, FILE* file)
+void DDStaticInfoPrint(DDStaticInfo si, FILE* file)
 {
   fprintf(file, "--- START STRUCTURE ----\n");
   fprintf(file, "Equation offsets:\n");

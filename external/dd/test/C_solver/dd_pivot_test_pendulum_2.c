@@ -14,7 +14,7 @@ int main(void)
 {
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
-  DDStaticInfo si = DDstaticInfoCreate(CTX,
+  DDStaticInfo si = DDStaticInfoCreate(CTX,
                                        PENDULUM_N,
                                        PENDULUM_C,
                                        PENDULUM_D,
@@ -23,11 +23,11 @@ int main(void)
                                        NULL);
 
   TEST_ASSERT(si != NULL);
-  SUNMatrix J_0 = SUNDenseMatrix(PENDULUM_N, PENDULUM_N, CTX);
-  TEST_ASSERT(J_0 != NULL);
-  DDMatrix jac = DDMatWrapDense(J_0);
-  TEST_ASSERT(jac != NULL);
-  PivMem pm = PIVCreate(CTX, si, jac, PendulumJacf0);
+  SUNMatrix J0 = SUNDenseMatrix(PENDULUM_N, PENDULUM_N, CTX);
+  TEST_ASSERT(J0 != NULL);
+  PIVMatrix pJ0 = PIVMatWrapDense(J0);
+  TEST_ASSERT(pJ0 != NULL);
+  PivMem pm = PIVCreate(CTX, si, pJ0, PendulumJacf0);
   TEST_ASSERT(pm != NULL);
 
   PendulumData data = {.m = ONE, .param = {ONE, ZERO}};
@@ -60,7 +60,7 @@ int main(void)
   TEST_ASSERT(known[1]);
   TEST_ASSERT(known[2]);
 
-  uint8_t* spec = pm->spec;
+  uint8_t* spec = PIVGetSpec(pm);
   TEST_ASSERT(spec[0] == 2);
   TEST_ASSERT(spec[1] == 0);
   TEST_ASSERT(spec[2] == 0);
@@ -68,7 +68,7 @@ int main(void)
   DDDAEState state = DDDAEStateCreate(si);
   TEST_ASSERT(state != NULL)
 
-  TEST_ASSERT(DDDAEStateUpdate(si, pm->spec, state) == SUN_SUCCESS);
+  TEST_ASSERT(DDDAEStateUpdate(si, PIVGetSpec(pm), state) == SUN_SUCCESS);
 
   Pair_sunindextype* aliases = state->diff_var_aliases;
   TEST_ASSERT(aliases[0].fst == 0);
@@ -94,10 +94,10 @@ int main(void)
   TEST_ASSERT(yp[6] < 0);
 
   PIVDestroy(&pm);
-  DDstaticInfoDestroy(si);
+  DDStaticInfoDestroy(si);
   N_VDestroy(Y);
-  SUNMatDestroy(J_0);
-  DDMatDestroy(jac);
+  SUNMatDestroy(J0);
+  PIVMatDestroy(pJ0);
   DDDAEStateDestroy(&state);
 
   return EXIT_SUCCESS;

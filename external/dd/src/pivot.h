@@ -31,7 +31,7 @@
  * @return a value `0` on success, a positive values if a recoverable error
  *         occurred and a negative value of a non-recoverable error occurred.
  */
-typedef int DDJacFn0(sunrealtype t, N_Vector Y, SUNMatrix J, void* user_data);
+typedef int PIVJacFn0(sunrealtype t, N_Vector Y, SUNMatrix J, void* user_data);
 
 /* --------------------------------------------------------------------------
  * Pivot Memory
@@ -43,9 +43,9 @@ typedef struct
 
   DDStaticInfo si; /**< Static DAE info */
 
-  DDJacFn0* jacfn0; /**< Jacobian callback function for highest order derivatives */
+  PIVJacFn0* jacfn0; /**< Jacobian callback function for highest order derivatives */
 
-  DDMatrix J_0; /**< Jacobian at stage k=0 */
+  PIVMatrix J_0; /**< Jacobian at stage k=0 */
 
   void* user_data; /**< User data */
 
@@ -56,8 +56,8 @@ typedef struct
   uint8_t* old_spec; /**< Previous spec, used to detect changes in PIVPivot */
   sunbooleantype** known_k;     /**< Indicates known variables at each stage */
   sunindextype** vars_k;        /**< Pivoted variables in each stage */
-  DDMatrix* J_k;                /**< Jacobian subset for each stage */
-  DDMatrixWorkspace* wss;       /**< Workspace for each stage */
+  PIVMatrix* J_k;               /**< Jacobian subset for each stage */
+  PIVMatrixWorkspace* wss;      /**< Workspace for each stage */
   sunindextype* vars_k_flat;    /**< `vars_k` as a flat array */
   sunbooleantype* known_k_flat; /**< `known_k` as a flat array */
 } _PivMem;
@@ -66,7 +66,7 @@ typedef struct
 typedef _PivMem* PivMem;
 
 /** @brief Creates pivot data based on static DAE info. `jacfn0` is required. */
-PivMem PIVCreate(SUNContext, DDStaticInfo, DDMatrix, DDJacFn0);
+PivMem PIVCreate(SUNContext, DDStaticInfo, PIVMatrix, PIVJacFn0);
 
 /** @brief Sets user data for the Jacobian callback **/
 SUNErrCode PIVSetUserData(PivMem, void*);
@@ -89,5 +89,8 @@ void PIVPrint(PivMem, FILE*);
  *         spec. Sets *spec_changed to SUNTRUE if the spec changed, SUNFALSE
  *         otherwise. Returns a SUNErrCode. */
 SUNErrCode PIVPivot(PivMem, sunrealtype, sunrealtype, N_Vector, sunbooleantype*);
+
+/** @brief Returns the current dummy derivative spec of this pivot memory */
+uint8_t* PIVGetSpec(PivMem);
 
 #endif

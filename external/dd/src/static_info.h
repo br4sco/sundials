@@ -72,7 +72,7 @@ typedef DDstaticInfoRec* DDStaticInfo;
  * ========================================================================== */
 
 /** @brief Creates static DAE info. */
-DDStaticInfo DDstaticInfoCreate(SUNContext sunctx,
+DDStaticInfo DDStaticInfoCreate(SUNContext sunctx,
                                 sunindextype N,
                                 const uint8_t eqnofs[static N],
                                 const uint8_t varofs[static N],
@@ -81,9 +81,9 @@ DDStaticInfo DDstaticInfoCreate(SUNContext sunctx,
                                 const char** var_names);
 
 /** @brief Destroys static DAE info. */
-void DDstaticInfoDestroy(DDStaticInfo si);
+void DDStaticInfoDestroy(DDStaticInfo si);
 
 /** @brief Prints static DAE info. */
-void DDstaticInfoPrint(DDStaticInfo si, FILE*);
+void DDStaticInfoPrint(DDStaticInfo si, FILE*);
 
 #endif

@@ -12,17 +12,17 @@ int main(void)
   SUNContext_Create(SUN_COMM_NULL, &ctx);
 
   SUNMatrix A = SUNDenseMatrix(3, 2, ctx);
-  DDMatrix B  = DDMatWrapDense(A);
+  PIVMatrix B = PIVMatWrapDense(A);
   TEST_ASSERT(B != NULL);
 
-  DDMatrixWorkspace ws = DDMatCreateWS(B);
+  PIVMatrixWorkspace ws = PIVMatCreateWS(B);
   TEST_ASSERT(ws != NULL);
 
-  DDMatDestroy(B);
+  PIVMatDestroy(B);
   B = NULL;
-  DDMatWSDestroy(ws);
+  PIVMatWSDestroy(ws);
   ws = NULL;
-  DDMatWSDestroy(ws);
+  PIVMatWSDestroy(ws);
   SUNMatDestroy(A);
   return EXIT_SUCCESS;
 }

@@ -12,16 +12,16 @@ int main(void)
   SUNContext_Create(SUN_COMM_NULL, &ctx);
 
   SUNMatrix A = SUNDenseMatrix(4, 4, ctx);
-  DDMatrix B  = DDMatWrapDense(A);
+  PIVMatrix B = PIVMatWrapDense(A);
   TEST_ASSERT(B != NULL);
   SUNMatrix C = SUNDenseMatrix(3, 2, ctx);
-  DDMatrix D  = DDMatWrapDense(C);
+  PIVMatrix D = PIVMatWrapDense(C);
   TEST_ASSERT(D != NULL);
 
   for (sunindextype i = 0; i < SM_LDATA_D(A); ++i) { SM_DATA_D(A)[i] = i + 1; }
   sunindextype rows[] = {1, 2, 3};
   sunindextype cols[] = {1, 2};
-  TEST_ASSERT(DDCopySub(B, D, rows, cols) == SUN_SUCCESS);
+  TEST_ASSERT(PIVCopySub(B, D, rows, cols) == SUN_SUCCESS);
 
   TEST_ASSERT(C != NULL);
   TEST_ASSERT(SM_ROWS_D(C) == 3);
@@ -32,8 +32,8 @@ int main(void)
   TEST_ASSERT(SM_ELEMENT_D(C, 0, 1) == 10);
   TEST_ASSERT(SM_ELEMENT_D(C, 1, 1) == 11);
   TEST_ASSERT(SM_ELEMENT_D(C, 2, 1) == 12);
-  DDMatDestroy(B);
-  DDMatDestroy(D);
+  PIVMatDestroy(B);
+  PIVMatDestroy(D);
   SUNMatDestroy(A);
   return EXIT_SUCCESS;
 }

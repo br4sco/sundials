@@ -13,29 +13,29 @@ int main(void)
 {
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
-  DDStaticInfo si = DDstaticInfoCreate(CTX,
-                          PENDULUM_N,
-                          PENDULUM_C,
-                          PENDULUM_D,
-                          PENDULUM_VAR_IDX_MAP,
-                          NULL,
-                          NULL);
+  DDStaticInfo si = DDStaticInfoCreate(CTX,
+                                       PENDULUM_N,
+                                       PENDULUM_C,
+                                       PENDULUM_D,
+                                       PENDULUM_VAR_IDX_MAP,
+                                       NULL,
+                                       NULL);
 
   TEST_ASSERT(si != NULL);
-  SUNMatrix J_0 = SUNDenseMatrix(si->N, si->N, CTX);
-  TEST_ASSERT(J_0 != NULL);
-  DDMatrix dd_J_0 = DDMatWrapDense(J_0);
-  TEST_ASSERT(dd_J_0 != NULL);
+  SUNMatrix J0 = SUNDenseMatrix(si->N, si->N, CTX);
+  TEST_ASSERT(J0 != NULL);
+  PIVMatrix pJ0 = PIVMatWrapDense(J0);
+  TEST_ASSERT(pJ0 != NULL);
 
-  PivMem pm = PIVCreate(CTX, si, dd_J_0, PendulumJacf0);
+  PivMem pm = PIVCreate(CTX, si, pJ0, PendulumJacf0);
   TEST_ASSERT(pm != NULL);
   PIVDestroy(&pm);
   pm = NULL;
   PIVDestroy(&pm);
 
-  DDstaticInfoDestroy(si);
-  SUNMatDestroy(J_0);
-  DDMatDestroy(dd_J_0);
+  DDStaticInfoDestroy(si);
+  SUNMatDestroy(J0);
+  PIVMatDestroy(pJ0);
 
   return EXIT_SUCCESS;
 }

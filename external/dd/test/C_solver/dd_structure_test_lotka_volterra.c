@@ -12,13 +12,13 @@ int main(void)
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
   sunindextype i, j, k;
-  DDStaticInfo si = DDstaticInfoCreate(CTX,
-                          LOTKA_VOLTERRA_N,
-                          LOTKA_VOLTERRA_C,
-                          LOTKA_VOLTERRA_D,
-                          LOTKA_VOLTERRA_VAR_IDX_MAP,
-                          NULL,
-                          NULL);
+  DDStaticInfo si = DDStaticInfoCreate(CTX,
+                                       LOTKA_VOLTERRA_N,
+                                       LOTKA_VOLTERRA_C,
+                                       LOTKA_VOLTERRA_D,
+                                       LOTKA_VOLTERRA_VAR_IDX_MAP,
+                                       NULL,
+                                       NULL);
 
   TEST_ASSERT(si != NULL);
 
@@ -61,7 +61,7 @@ int main(void)
   TEST_ASSERT(vars[1] == j);
   TEST_ASSERT(DDSI_VAR_ORDER(si, k, j) == 1);
 
-  DDstaticInfoDestroy(si);
+  DDStaticInfoDestroy(si);
 
   return EXIT_SUCCESS;
 }

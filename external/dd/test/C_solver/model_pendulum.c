@@ -53,7 +53,7 @@ int main(int argc, char* argv[])
   TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &sunctx) == SUN_SUCCESS);
 
   /* Compute DAE structure. */
-  DDStaticInfo si = DDstaticInfoCreate(sunctx,
+  DDStaticInfo si = DDStaticInfoCreate(sunctx,
                                        PENDULUM_N,
                                        PENDULUM_C,
                                        PENDULUM_D,
@@ -68,8 +68,8 @@ int main(int argc, char* argv[])
   /* Allocate state and Jacobian data. */
   SUNMatrix J0 = SUNDenseMatrix(si->N, si->N, sunctx);
   TEST_ASSERT(J0);
-  DDMatrix dd_J0 = DDMatWrapDense(J0);
-  TEST_ASSERT(dd_J0);
+  PIVMatrix pJ0 = PIVMatWrapDense(J0);
+  TEST_ASSERT(pJ0);
   N_Vector Y = N_VNew_Serial(N, sunctx);
   TEST_ASSERT(Y);
 
@@ -85,7 +85,7 @@ int main(int argc, char* argv[])
   PendulumY0(data, theta0, Y);
 
   /* Create pivot memory and compute initial spec. */
-  PivMem pm = PIVCreate(sunctx, si, dd_J0, PendulumJacf0);
+  PivMem pm = PIVCreate(sunctx, si, pJ0, PendulumJacf0);
   TEST_ASSERT(pm);
   TEST_ASSERT(PIVSetUserData(pm, data) == SUN_SUCCESS);
   sunbooleantype spec_changed;
@@ -95,7 +95,8 @@ int main(int argc, char* argv[])
   DDMem dd_mem = DDCreate(sunctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(DDInit(dd_mem, si, PendulumRes, pm->spec, t0, Y) == IDA_SUCCESS);
+  TEST_ASSERT(DDInit(dd_mem, si, PendulumRes, PIVGetSpec(pm), t0, Y) ==
+              IDA_SUCCESS);
 
   TEST_ASSERT(DDSetUserData(dd_mem, data) == IDA_SUCCESS);
 
@@ -174,7 +175,7 @@ int main(int argc, char* argv[])
     TEST_ASSERT(PIVPivot(pm, ZERO, t, Y, &spec_changed) == SUN_SUCCESS);
     if (spec_changed)
     {
-      TEST_ASSERT(DDSetSpec(dd_mem, pm->spec) == SUN_SUCCESS);
+      TEST_ASSERT(DDSetSpec(dd_mem, PIVGetSpec(pm)) == SUN_SUCCESS);
     }
 
     const sunrealtype x = P_Ith(Y, 0, 0), y = P_Ith(Y, 1, 0),
@@ -198,9 +199,9 @@ int main(int argc, char* argv[])
   /* Cleanup */
   DDFree(&dd_mem);
   PIVDestroy(&pm);
-  DDMatDestroy(dd_J0);
+  PIVMatDestroy(pJ0);
   N_VDestroy(Y);
-  DDstaticInfoDestroy(si);
+  DDStaticInfoDestroy(si);
   SUNContext_Free(&sunctx);
   SUNLinSolFree(LS);
   SUNMatDestroy(J);

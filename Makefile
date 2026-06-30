@@ -38,7 +38,7 @@ install: $(BUILD_DIR)
 
 .PHONY: format
 format:
-	clang-format -i $(shell find external/dd/src -name "*.h" -o -name "*.c")
+	clang-format -i $(shell find external/dd/src external/dd/test -name "*.h" -o -name "*.c")
 
 .PHONY: clean
 clean:
