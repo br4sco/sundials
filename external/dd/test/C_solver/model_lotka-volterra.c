@@ -12,6 +12,7 @@
 #include "dd.h"
 #include "matrix.h"
 #include "models.h"
+#include "pivot.h"
 #include "static_info.h"
 #include "sundials/sundials_types.h"
 #include "sunmatrix/sunmatrix_sparse.h"
