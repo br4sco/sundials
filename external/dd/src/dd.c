@@ -85,6 +85,8 @@ static DDckpntMem DDckpntCreate(DDStaticInfo si, sunrealtype t, DDDAEState state
 typedef struct
 {
   DDResFnB* db_resB;
+  DDLsJacFnB* db_jacB;
+  DDQuadRhsFnB* db_quadB;
   void* db_user_data;
 } DataB;
 
@@ -207,6 +209,27 @@ static int DDResBWrapper(sunrealtype,
                          N_Vector,
                          N_Vector,
                          void*);
+
+static int DDLsJacFnBWrapper(sunrealtype,
+                             sunrealtype,
+                             N_Vector,
+                             N_Vector,
+                             N_Vector,
+                             N_Vector,
+                             N_Vector,
+                             SUNMatrix,
+                             void*,
+                             N_Vector,
+                             N_Vector,
+                             N_Vector);
+
+static int DDQuadRhsFnBWrapper(sunrealtype,
+                               N_Vector,
+                               N_Vector,
+                               N_Vector,
+                               N_Vector,
+                               N_Vector,
+                               void*);
 
 static void DDSetYpFromY(DDStaticInfo, DDDAEState, N_Vector, N_Vector);
 static void DDSetId(DDStaticInfo, DDDAEState, N_Vector);
@@ -1142,15 +1165,14 @@ int DDInitB(DDMem dd_mem,
 
   ProbB pb = {.pb_which = which};
 
-  pb.pb_data = malloc(sizeof(*pb.pb_data));
+  pb.pb_data = calloc(1, sizeof(*pb.pb_data));
   if (pb.pb_data == NULL)
   {
     DDHandleErr(SUN_ERR_MEM_FAIL);
     return SUN_ERR_MEM_FAIL;
   }
 
-  pb.pb_data->db_resB      = resB;
-  pb.pb_data->db_user_data = NULL;
+  pb.pb_data->db_resB = resB;
 
   if (IDAInitB(ida_mem, which, DDResBWrapper, tB0, yyB0, ypB0) < 0)
   {
@@ -1195,6 +1217,40 @@ static int DDResBWrapper(sunrealtype t,
 
   /* Evaluate user supplied residual function. */
   return data->db_resB(t, yy, yyB, ypB, rrB, data->db_user_data);
+}
+
+static int DDLsJacFnBWrapper(sunrealtype t,
+                             sunrealtype cj,
+                             N_Vector yy,
+                             SUNDIALS_MAYBE_UNUSED N_Vector yp,
+                             N_Vector yyB,
+                             N_Vector ypB,
+                             N_Vector rrB,
+                             SUNMatrix JB,
+                             void* user_dataB,
+                             N_Vector tmp1,
+                             N_Vector tmp2,
+                             N_Vector tmp3)
+{
+  DataB* data = (DataB*)user_dataB;
+
+  /* Evaluate user supplied jacobian function. */
+  return data
+    ->db_jacB(t, cj, yy, yyB, ypB, rrB, JB, data->db_user_data, tmp1, tmp2, tmp3);
+}
+
+static int DDQuadRhsFnBWrapper(sunrealtype t,
+                               N_Vector yy,
+                               SUNDIALS_MAYBE_UNUSED N_Vector yp,
+                               N_Vector yyB,
+                               N_Vector ypB,
+                               N_Vector rhsBQ,
+                               void* user_dataB)
+{
+  DataB* data = (DataB*)user_dataB;
+
+  /* Evaluate user supplied quadrature function. */
+  return data->db_quadB(t, yy, yyB, ypB, rhsBQ, data->db_user_data);
 }
 
 /* --------------------------------------------------------------------------
@@ -1611,6 +1667,71 @@ int DDJacFn_CSC(sunindextype M,
 }
 
 /* --------------------------------------------------------------------------
+ * Quadrature Functions
+ * -------------------------------------------------------------------------- */
+
+int DDQuadInitB(DDMem dd_mem, int indexB, DDQuadRhsFnB rhsQB, N_Vector yQB0)
+{
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_DD_MEM_NULL;
+  }
+
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  SUNAssert(rhsQB != NULL, SUN_ERR_ARG_CORRUPT);
+  SUNAssert(yQB0 != NULL, SUN_ERR_ARG_CORRUPT);
+
+  DynArr_ProbB pbs = dd_mem->dd_probBs;
+
+  int flag = SUN_ERR_ARG_OUTOFRANGE;
+
+  for (size_t i = 0; i < DA_LENGTH(pbs); ++i)
+  {
+    if (DA_Ith(pbs, i).pb_which == indexB)
+    {
+      DA_Ith(pbs, i).pb_data->db_quadB = rhsQB;
+
+      flag = SUN_SUCCESS;
+
+      break;
+    }
+  }
+
+  SUNAssert(flag < 0, flag);
+
+  if (IDAQuadInitB(dd_mem->ida_mem, indexB, DDQuadRhsFnBWrapper, yQB0) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    flag = DD_ERR_IDA_ERR;
+  }
+
+  return flag;
+}
+
+int DDGetQuadB(DDMem dd_mem, int indexB, sunrealtype* tret, N_Vector yQB)
+{
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_DD_MEM_NULL;
+  }
+
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  SUNAssert(yQB != NULL, SUN_ERR_ARG_CORRUPT);
+
+  if (IDAGetQuadB(dd_mem->ida_mem, indexB, tret, yQB) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return SUN_SUCCESS;
+}
+
+/* --------------------------------------------------------------------------
  * Remaining Setters and Getters
  * -------------------------------------------------------------------------- */
 
@@ -1863,7 +1984,7 @@ int DDSensEEtolerances(DDMem dd_mem)
   return DD_SUCCESS;
 }
 
-int DDSetLinearSolverB(DDMem dd_mem, int which, SUNLinearSolver LS, SUNMatrix A)
+int DDSetLinearSolverB(DDMem dd_mem, int indexB, SUNLinearSolver LS, SUNMatrix A)
 {
   if (dd_mem == NULL)
   {
@@ -1885,7 +2006,7 @@ int DDSetLinearSolverB(DDMem dd_mem, int which, SUNLinearSolver LS, SUNMatrix A)
     return SUN_ERR_ARG_CORRUPT;
   }
 
-  if (IDASetLinearSolverB(dd_mem->ida_mem, which, LS, A) < 0)
+  if (IDASetLinearSolverB(dd_mem->ida_mem, indexB, LS, A) < 0)
   {
     DDHandleErr(DD_ERR_IDA_ERR);
     return DD_ERR_IDA_ERR;
@@ -1894,7 +2015,7 @@ int DDSetLinearSolverB(DDMem dd_mem, int which, SUNLinearSolver LS, SUNMatrix A)
   return DD_SUCCESS;
 }
 
-int DDSStolerancesB(DDMem dd_mem, int which, sunrealtype reltolB, sunrealtype abstolB)
+int DDSetJacFnB(DDMem dd_mem, int indexB, DDLsJacFnB jacfn)
 {
   if (dd_mem == NULL)
   {
@@ -1904,7 +2025,46 @@ int DDSStolerancesB(DDMem dd_mem, int which, sunrealtype reltolB, sunrealtype ab
 
   SUNFunctionBegin(dd_mem->sunctx);
 
-  if (IDASStolerancesB(dd_mem->ida_mem, which, reltolB, abstolB) < 0)
+  SUNAssert(jacfn != NULL, SUN_ERR_ARG_CORRUPT);
+
+  DynArr_ProbB pbs = dd_mem->dd_probBs;
+
+  int flag = SUN_ERR_ARG_OUTOFRANGE;
+
+  for (size_t i = 0; i < DA_LENGTH(pbs); ++i)
+  {
+    if (DA_Ith(pbs, i).pb_which == indexB)
+    {
+      DA_Ith(pbs, i).pb_data->db_jacB = jacfn;
+
+      flag = SUN_SUCCESS;
+
+      break;
+    }
+  }
+
+  SUNAssert(flag < 0, flag);
+
+  if (IDASetJacFnB(dd_mem->ida_mem, indexB, DDLsJacFnBWrapper) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    flag = DD_ERR_IDA_ERR;
+  }
+
+  return flag;
+}
+
+int DDSStolerancesB(DDMem dd_mem, int indexB, sunrealtype reltolB, sunrealtype abstolB)
+{
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
+
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (IDASStolerancesB(dd_mem->ida_mem, indexB, reltolB, abstolB) < 0)
   {
     DDHandleErr(DD_ERR_IDA_ERR);
     return DD_ERR_IDA_ERR;
@@ -1913,7 +2073,7 @@ int DDSStolerancesB(DDMem dd_mem, int which, sunrealtype reltolB, sunrealtype ab
   return DD_SUCCESS;
 }
 
-int DDSetUserDataB(DDMem dd_mem, int which, void* user_dataB)
+int DDSetUserDataB(DDMem dd_mem, int indexB, void* user_dataB)
 {
   if (dd_mem == NULL)
   {
@@ -1928,11 +2088,13 @@ int DDSetUserDataB(DDMem dd_mem, int which, void* user_dataB)
   int flag = SUN_ERR_ARG_OUTOFRANGE;
   for (size_t i = 0; i < DA_LENGTH(pbs); ++i)
   {
-    if (DA_Ith(pbs, i).pb_which == which)
+    if (DA_Ith(pbs, i).pb_which == indexB)
     {
       DA_Ith(pbs, i).pb_data->db_user_data = user_dataB;
 
       flag = SUN_SUCCESS;
+
+      break;
     }
   }
 

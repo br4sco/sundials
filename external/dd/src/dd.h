@@ -5,9 +5,7 @@
 #include <sundials/sundials_core.h>
 
 #include "static_info.h"
-#include "sundials/sundials_errors.h"
 #include "sundials/sundials_nvector.h"
-#include "sunmatrix/sunmatrix_sparse.h"
 
 /* ==========================================================================
  * Types, Constants, and Macro Definitions
@@ -342,7 +340,7 @@ typedef int DDSensResFn(int Ns,
  * @param[in] yyB are the dependent variables of the backwards DAE.
  * @param[in] ypB are the derivatives of `yyB`, i.e., `d/dt yyB = ypB`.
  * @param[out] rrB holds the values of the adjoint residual.
- * @param[inout] user_data points to user-defined data.
+ * @param[inout] user_dataB points to user-defined data.
  *
  * @return a value `0` on success, a positive value if a recoverable error
  *         occurred and a negative value if a non-recoverable error occurred.
@@ -354,7 +352,79 @@ typedef int DDResFnB(sunrealtype t,
                      N_Vector yyB,
                      N_Vector ypB,
                      N_Vector rrB,
-                     void* user_data);
+                     void* user_dataB);
+
+/**
+ * @brief Jacobian callback function for the backward problem (see
+ * `IDALsJacFnB`).
+ *
+ * Should compute the Jacobian
+ *
+ * JB = ∂F_B/∂yyB + cj ⋅ ∂F_B/∂ypB,
+ *
+ * where F_B is the backward residual implemented by `DDResFnB` and
+ * cj ∈ ℝ is a solver-supplied scale factor.
+ *
+ * @param[in] t is the independent variable.
+ * @param[in] cj is proportional to the inverse of the step-size.
+ * @param[in] Y are the forward dependent variables and their derivatives.
+ * @param[in] yyB are the dependent variables of the backward DAE.
+ * @param[in] ypB are the derivatives of `yyB`, i.e., `d/dt yyB = ypB`.
+ * @param[in] rrB holds the values of the backward residual F_B.
+ * @param[out] JB holds the values of the Jacobian. Only non-zero values
+ *               need to be written to `JB`.
+ * @param[inout] user_dataB points to user-defined data.
+ * @param[inout] tmp1 user controlled workspace data.
+ * @param[inout] tmp2 user controlled workspace data.
+ * @param[inout] tmp3 user controlled workspace data.
+ *
+ * @return a value `0` on success, a positive value if a recoverable error
+ *         occurred and a negative value if a non-recoverable error occurred.
+ */
+typedef int DDLsJacFnB(sunrealtype t,
+                       sunrealtype cj,
+                       N_Vector Y,
+                       N_Vector yyB,
+                       N_Vector ypB,
+                       N_Vector rrB,
+                       SUNMatrix JB,
+                       void* user_dataB,
+                       N_Vector tmp1,
+                       N_Vector tmp2,
+                       N_Vector tmp3);
+
+/**
+ * @brief Quadrature right-hand side callback for the backward problem (see
+ * `IDAQuadRhsFnB`).
+ *
+ * Computes the integrand of the backward quadrature ODE. The integrated
+ * values are retrieved via `DDGetQuadB`.
+ *
+ * @par Example: first adjoint quadrature
+ * For computing parameter sensitivities of the functional ∫ g(t,Y,p) dt,
+ * where yyB solves the first adjoint DAE (see `DDResFnB`), set
+ *
+ * rhsBQ = (∂g/∂p)^* - (∂F/∂p)^* yyB,
+ *
+ * where * denotes conjugate transpose and F is the complete first-order
+ * forward system (see `DDResFnB`).
+ *
+ * @param[in] t is the independent variable.
+ * @param[in] Y are the forward dependent variables and their derivatives.
+ * @param[in] yyB are the dependent variables of the backward DAE.
+ * @param[in] ypB are the derivatives of `yyB`, i.e., `d/dt yyB = ypB`.
+ * @param[out] rhsBQ holds the values of the quadrature right-hand side.
+ * @param[inout] user_dataB points to user-defined data.
+ *
+ * @return a value `0` on success, a positive value if a recoverable error
+ *         occurred and a negative value if a non-recoverable error occurred.
+ */
+typedef int DDQuadRhsFnB(sunrealtype t,
+                         N_Vector Y,
+                         N_Vector yyB,
+                         N_Vector ypB,
+                         N_Vector rhsBQ,
+                         void* user_dataB);
 
 /* ==========================================================================
  * Solver Interface
@@ -581,6 +651,9 @@ void* DDGetIDAMem(DDMem dd_mem);
 /** @brief Sets the linear solver. @see IDASetLinearSolver */
 int DDSetLinearSolver(DDMem dd_mem, SUNLinearSolver LS, SUNMatrix J);
 
+/** @brief Sets the Jacobian callback for a matrix-based linear solver. @see IDASetJacFn */
+int DDSetJacFn(DDMem dd_mem, DDLsJacFn jacfn);
+
 /** @brief Sets scalar absolute and relative tolerances. @see IDASStolerances */
 int DDSSTolerances(DDMem dd_mem, sunrealtype reltol, sunrealtype abstol);
 
@@ -611,8 +684,8 @@ int DDSensEEtolerances(DDMem dd_mem);
 /** @brief Sets the linear solver for a backward problem. @see IDASetLinearSolverB */
 int DDSetLinearSolverB(DDMem dd_mem, int indexB, SUNLinearSolver LS, SUNMatrix J);
 
-/** @brief Sets the Jacobian callback for a matrix-based linear solver. @see IDASetJacFn */
-int DDSetJacFn(DDMem dd_mem, DDLsJacFn jacfn);
+/** @brief Sets the Jacobian callback for a backward problem. @see IDASetJacFnB */
+int DDSetJacFnB(DDMem dd_mem, int indexB, DDLsJacFnB jacfn);
 
 /** @brief Sets scalar tolerances for a backward problem. @see IDASStolerancesB */
 int DDSStolerancesB(DDMem dd_mem,
@@ -638,6 +711,12 @@ int DDGetConsistentICB(DDMem dd_mem,
                        int indexB,
                        N_Vector yyB0_mod,
                        N_Vector ypB0_mod);
+
+/** @brief Initializes quadrature integration for a backward problem. @see IDAQuadInitB */
+int DDQuadInitB(DDMem dd_mem, int indexB, DDQuadRhsFnB rhsQB, N_Vector yQB0);
+
+/** @brief Returns the quadrature variables of a backward problem. @see IDAGetQuadB */
+int DDGetQuadB(DDMem dd_mem, int indexB, sunrealtype* tret, N_Vector yQB);
 
 /**
  * @brief Returns the current dummy derivative specification (length N).
