@@ -207,6 +207,7 @@ static int DDResBWrapper(sunrealtype,
                          N_Vector,
                          N_Vector,
                          void*);
+
 static void DDSetYpFromY(DDStaticInfo, DDDAEState, N_Vector, N_Vector);
 static void DDSetId(DDStaticInfo, DDDAEState, N_Vector);
 static void DDAdjCleanup(DDMem dd_mem);
@@ -1554,6 +1555,59 @@ static int DDLsJacFnWrapper2(sunrealtype t,
                                tmp3);
 
   return flag;
+}
+
+int DDJacFn_CSC(sunindextype M,
+                DDLsJacColFn_CSC* fn,
+                const sunindextype yy_diff_alias_row[static 1],
+                const sunindextype yp_diff_alias_row[static 1],
+                sunrealtype t,
+                sunrealtype cj,
+                N_Vector Y,
+                N_Vector R,
+                SUNMatrix J,
+                void* user_data,
+                N_Vector tmp1,
+                N_Vector tmp2,
+                N_Vector tmp3)
+{
+  SUNFunctionBegin(J->sunctx);
+
+  SUNCheck(SUNMatGetID(J) == SUNMATRIX_SPARSE, SUN_ERR_ARG_WRONGTYPE);
+  SUNCheck(SM_SPARSETYPE_S(J) == CSC_MAT, SUN_ERR_ARG_OUTOFRANGE);
+  SUNCheck((0 < M) && (M < SM_ROWS_S(J)), SUN_ERR_ARG_OUTOFRANGE);
+
+  const sunindextype N = SM_COLUMNS_S(J);
+
+  SUNCheck(M < N, SUN_ERR_ARG_OUTOFRANGE);
+
+  sunindextype nnz = 0;
+  for (sunindextype j = 0; j < N; ++j)
+  {
+    SM_INDEXPTRS_S(J)[j] = nnz;
+    int flag             = fn(j, t, Y, R, J, &nnz, user_data, tmp1, tmp2, tmp3);
+    if (flag != 0) { return flag; }
+
+    sunindextype yy_alias_row = yy_diff_alias_row[j];
+    if (yy_alias_row >= 0)
+    {
+      SM_DATA_S(J)[nnz]      = -cj;
+      SM_INDEXVALS_S(J)[nnz] = yy_alias_row;
+      nnz += 1;
+    }
+
+    sunindextype yp_alias_row = yp_diff_alias_row[j];
+    if (yp_alias_row >= 0)
+    {
+      SM_DATA_S(J)[nnz]      = ONE;
+      SM_INDEXVALS_S(J)[nnz] = yp_alias_row;
+      nnz += 1;
+    }
+  }
+
+  SM_INDEXPTRS_S(J)[SM_NP_S(J)] = nnz;
+
+  return SUN_SUCCESS;
 }
 
 /* --------------------------------------------------------------------------

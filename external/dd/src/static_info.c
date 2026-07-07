@@ -23,11 +23,11 @@ void DDStaticInfoDestroy(DDStaticInfo si)
       si->varofs = NULL;
     }
 
-    sunindextype** var_idx_map = si->var_deriv_chains;
-    if (var_idx_map != NULL)
+    sunindextype** var_deriv_chains = si->var_deriv_chains;
+    if (var_deriv_chains != NULL)
     {
-      for (sunindextype j = 0; j < N; ++j) { var_idx_map[j] = NULL; }
-      free(var_idx_map);
+      for (sunindextype j = 0; j < N; ++j) { var_deriv_chains[j] = NULL; }
+      free(var_deriv_chains);
       si->var_deriv_chains_flat = NULL;
     }
 
@@ -73,7 +73,7 @@ DDStaticInfo DDStaticInfoCreate(SUNContext sunctx,
                                 sunindextype N,
                                 const uint8_t eqnofs[static N],
                                 const uint8_t varofs[static N],
-                                const sunindextype* var_idx_map[static N],
+                                const sunindextype* var_deriv_chains[static N],
                                 const char** eqn_names,
                                 const char** var_names)
 {
@@ -136,7 +136,7 @@ DDStaticInfo DDStaticInfoCreate(SUNContext sunctx,
     si->var_deriv_chains[j] = si->var_deriv_chains_flat + ofs;
     for (uint8_t k = 0; k <= varofs[j]; ++k)
     {
-      si->var_deriv_chains_flat[ofs] = var_idx_map[j][k];
+      si->var_deriv_chains_flat[ofs] = var_deriv_chains[j][k];
       ++ofs;
     }
   }

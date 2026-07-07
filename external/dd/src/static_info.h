@@ -118,10 +118,10 @@ typedef DDstaticInfoRec* DDStaticInfo;
  * @param[in] N           Number of equations and variables in the original DAE.
  * @param[in] eqnofs      Canonical equation offsets c ∈ ℕ₀ⁿ (length N).
  * @param[in] varofs      Canonical variable offsets d ∈ ℕ₀ⁿ (length N).
- * @param[in] var_idx_map Derivative chain indices (array of N pointers).
- *                        `var_idx_map[j]` must point to an array of dⱼ+1
- *                        indices giving the position of yⱼ⁽⁰⁾…yⱼ⁽ᵈʲ⁾ in the
- *                        augmented state vector Y.
+ * @param[in] var_deriv_chains Derivative chain indices (array of N pointers).
+ *                             `var_deriv_chains[j]` must point to an array of
+ *                             dⱼ+1 indices giving the position of
+ *                             yⱼ⁽⁰⁾…yⱼ⁽ᵈʲ⁾ in the augmented state vector Y.
  * @param[in] eqn_names   Optional array of N equation name strings (may be NULL).
  * @param[in] var_names   Optional array of N variable name strings (may be NULL).
  *
@@ -131,7 +131,7 @@ DDStaticInfo DDStaticInfoCreate(SUNContext sunctx,
                                 sunindextype N,
                                 const uint8_t eqnofs[static N],
                                 const uint8_t varofs[static N],
-                                const sunindextype* var_idx_map[static N],
+                                const sunindextype* var_deriv_chains[static N],
                                 const char** eqn_names,
                                 const char** var_names);
 
