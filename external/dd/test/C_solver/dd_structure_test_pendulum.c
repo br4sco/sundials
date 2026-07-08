@@ -23,7 +23,6 @@ int main(void)
   TEST_ASSERT(si != NULL);
 
   TEST_ASSERT(si->N == 3);
-  TEST_ASSERT(si->N_backwards == 5);
 
   TEST_ASSERT(si->eqnofs[0] == 0); /* f₁(x'', x, λ) */
   TEST_ASSERT(si->eqnofs[1] == 0); /* f₂(y'', y, λ) */

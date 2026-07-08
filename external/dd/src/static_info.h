@@ -31,9 +31,6 @@ typedef struct
 
   sunindextype N; /**< Number of original (zero'th-order) equations and variables */
 
-  /** Length of the adjoint state vector: Σⱼ max(dⱼ, 1) */
-  sunindextype N_backwards;
-
   /** Total equations in the augmented system: Σᵢ (cᵢ + 1) */
   sunindextype M_all_orders;
 

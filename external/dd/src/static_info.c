@@ -93,12 +93,10 @@ DDStaticInfo DDStaticInfoCreate(SUNContext sunctx,
 
   si->M_all_orders = 0;
   si->N_all_orders = 0;
-  si->N_backwards  = 0;
   for (sunindextype i = 0; i < N; ++i)
   {
     si->M_all_orders += eqnofs[i] + 1;
     si->N_all_orders += varofs[i] + 1;
-    si->N_backwards += SUNMAX(varofs[i], 1);
   }
   si->N_diff = si->N_all_orders - si->M_all_orders;
 

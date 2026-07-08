@@ -144,7 +144,7 @@ int main(void)
    * ------------------------------------------------------------------------ */
 
   /* Allocate state and set initial values */
-  N_Vector yyB = N_VNew_Serial(si->N_backwards, sunctx);
+  N_Vector yyB = N_VNew_Serial(PENDULUM_ADJ_N, sunctx);
   TEST_ASSERT(yyB);
 
   N_Vector ypB = N_VClone(yyB);
@@ -165,7 +165,7 @@ int main(void)
 
   TEST_ASSERT(DDSetUserDataB(dd_mem, indexB, data) == IDA_SUCCESS);
 
-  SUNMatrix AB = SUNDenseMatrix(si->N_backwards, si->N_backwards, sunctx);
+  SUNMatrix AB = SUNDenseMatrix(PENDULUM_ADJ_N, PENDULUM_ADJ_N, sunctx);
   TEST_ASSERT(AB);
   SUNLinearSolver LSB = SUNLinSol_Dense(yyB, AB, sunctx);
   TEST_ASSERT(LSB);
@@ -190,14 +190,16 @@ int main(void)
   while (SUNTRUE)
   {
     fprintf(fileb,
-            "%f,%f,%f,%f,%f,%f,%f\n",
+            "%f,%f,%f,%f,%f,%f,%f,%f,%f\n",
             tret,
             yyB_arr[0],
             yyB_arr[2],
             yyB_arr[4],
             ypB_arr[0],
             ypB_arr[2],
-            ypB_arr[4]);
+            ypB_arr[4],
+            ypB_arr[5],
+            ypB_arr[6]);
 
     tret -= tstep;
 

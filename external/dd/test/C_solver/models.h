@@ -279,12 +279,12 @@ static const sunindextype* PENDULUM_VAR_IDX_MAP[] =
    (const sunindextype[]){3, 4, 5}, /* y, y', y'' */
    (const sunindextype[]){6} /* λ */};
 
-static const sunrealtype PENDULUM_ADJ_ID[] = {ONE, ONE, ONE, ONE, ONE};
 static const sunindextype PENDULUM_JAC_NNZ = 18;
 
 #define P_Ith(Y, i, k) (NV_Ith(Y, PENDULUM_VAR_IDX_MAP[i][k]))
 
-static const uint8_t PENDULUM_NP = 2;
+static const uint8_t PENDULUM_NP         = 2;
+static const sunindextype PENDULUM_ADJ_N = 7;
 
 typedef struct
 {
@@ -1039,7 +1039,7 @@ void PendulumYyBT(SUNDIALS_MAYBE_UNUSED PendulumData* data,
 {
   N_VConst(ZERO, yyBT);
   N_VConst(ZERO, ypBT);
-  NV_Ith(ypBT, 4) = ONE;
+  NV_Ith(ypBT, 3) = ONE; /* l4p(T) = 1 */
 }
 
 sunrealtype PendulumG(SUNDIALS_MAYBE_UNUSED sunrealtype t,
@@ -1073,17 +1073,21 @@ int PendulumResB(SUNDIALS_MAYBE_UNUSED sunrealtype t,
 
                     l1 = NV_Ith(yyB, 0), l2 = NV_Ith(yyB, 1),
                     l3 = NV_Ith(yyB, 2), l4 = NV_Ith(yyB, 3),
-                    l5 = NV_Ith(yyB, 4),
+                    l5 = NV_Ith(yyB, 4), l6 = NV_Ith(yyB, 5),
+                    l7 = NV_Ith(yyB, 6),
 
                     l1p = NV_Ith(ypB, 0), l2p = NV_Ith(ypB, 1),
                     l3p = NV_Ith(ypB, 2), l4p = NV_Ith(ypB, 3),
-                    l5p = NV_Ith(ypB, 4);
+                    l5p = NV_Ith(ypB, 4), l6p = NV_Ith(ypB, 5),
+                    l7p = NV_Ith(ypB, 6);
 
-  NV_Ith(rrB, 0) = -l1 * lambda / l - TWO * xpp * l3 - l4p;
-  NV_Ith(rrB, 1) = m * l1p - TWO * l3 * xp + TWO * x * l3p - l4;
-  NV_Ith(rrB, 2) = -lambda * l2 / l - TWO * ypp * l3 - l5p + ONE;
-  NV_Ith(rrB, 3) = m * l2p - TWO * l3 * yp + TWO * y * l3p - l5;
-  NV_Ith(rrB, 4) = (-x * l1 - y * l2) / l;
+  NV_Ith(rrB, 0) = -l4p - lambda / l * l1 - TWO * xpp * l3 + ONE;
+  NV_Ith(rrB, 1) = -l6p - FOUR * xp * l3 - l4;
+  NV_Ith(rrB, 2) = -m * l1 - TWO * x * l3 - l6;
+  NV_Ith(rrB, 3) = -l5p - lambda / l * l2 - TWO * ypp * l3;
+  NV_Ith(rrB, 4) = -l7p - FOUR * yp * l3 - l5;
+  NV_Ith(rrB, 5) = -m * l2 - TWO * y * l3 - l7;
+  NV_Ith(rrB, 6) = -x / l * l1 - y / l * l2;
 
   return 0;
 }
@@ -1114,11 +1118,13 @@ int PendulumJacFnB(SUNDIALS_MAYBE_UNUSED sunrealtype t,
 
                     l1 = NV_Ith(yyB, 0), l2 = NV_Ith(yyB, 1),
                     l3 = NV_Ith(yyB, 2), l4 = NV_Ith(yyB, 3),
-                    l5 = NV_Ith(yyB, 4),
+                    l5 = NV_Ith(yyB, 4), l6 = NV_Ith(yyB, 5),
+                    l7 = NV_Ith(yyB, 6),
 
                     l1p = NV_Ith(ypB, 0), l2p = NV_Ith(ypB, 1),
                     l3p = NV_Ith(ypB, 2), l4p = NV_Ith(ypB, 3),
-                    l5p = NV_Ith(ypB, 4);
+                    l5p = NV_Ith(ypB, 4), l6p = NV_Ith(ypB, 5),
+                    l7p = NV_Ith(ypB, 6);
 
   /* Row 0 */
   SM_ELEMENT_D(JB, 0, 0) = -lambda / l; /* l1 */
@@ -1126,23 +1132,33 @@ int PendulumJacFnB(SUNDIALS_MAYBE_UNUSED sunrealtype t,
   SM_ELEMENT_D(JB, 0, 3) = -cj;         /* l4 */
 
   /* Row 1 */
-  SM_ELEMENT_D(JB, 1, 0) = cj * m;                   /* l1 */
-  SM_ELEMENT_D(JB, 1, 2) = -TWO * xp + cj * TWO * x; /* l3 */
-  SM_ELEMENT_D(JB, 1, 3) = -1;                       /* l4 */
+  SM_ELEMENT_D(JB, 1, 2) = -FOUR * xp; /* l3 */
+  SM_ELEMENT_D(JB, 1, 3) = -ONE;       /* l4 */
+  SM_ELEMENT_D(JB, 1, 5) = -cj;        /* l6 */
 
   /* Row 2 */
-  SM_ELEMENT_D(JB, 2, 1) = -lambda / l; /* l1 */
-  SM_ELEMENT_D(JB, 2, 2) = -TWO * ypp;  /* l3 */
-  SM_ELEMENT_D(JB, 2, 4) = -cj;         /* l5 */
+  SM_ELEMENT_D(JB, 2, 0) = -m;       /* l1 */
+  SM_ELEMENT_D(JB, 2, 2) = -TWO * x; /* l3 */
+  SM_ELEMENT_D(JB, 2, 5) = -ONE;     /* l6 */
 
   /* Row 3 */
-  SM_ELEMENT_D(JB, 3, 1) = cj * m;                   /* l2 */
-  SM_ELEMENT_D(JB, 3, 2) = -TWO * yp + cj * TWO * y; /* l3 */
-  SM_ELEMENT_D(JB, 3, 4) = -ONE;                     /* l5 */
+  SM_ELEMENT_D(JB, 3, 1) = -lambda / l; /* l2 */
+  SM_ELEMENT_D(JB, 3, 2) = -TWO * ypp;  /* l3 */
+  SM_ELEMENT_D(JB, 3, 4) = -cj;         /* l5 */
 
   /* Row 4 */
-  SM_ELEMENT_D(JB, 4, 0) = -x / l; /* l1 */
-  SM_ELEMENT_D(JB, 4, 1) = -y / l; /* l2 */
+  SM_ELEMENT_D(JB, 4, 2) = -FOUR * yp; /* l3 */
+  SM_ELEMENT_D(JB, 4, 4) = -ONE;       /* l5 */
+  SM_ELEMENT_D(JB, 4, 6) = -cj;        /* l7 */
+
+  /* Row 5 */
+  SM_ELEMENT_D(JB, 5, 1) = -m;       /* l2 */
+  SM_ELEMENT_D(JB, 5, 2) = -TWO * y; /* l3 */
+  SM_ELEMENT_D(JB, 5, 6) = -ONE;     /* l7 */
+
+  /* Row 6 */
+  SM_ELEMENT_D(JB, 6, 0) = -x / l; /* l1 */
+  SM_ELEMENT_D(JB, 6, 1) = -y / l; /* l2 */
 
   return 0;
 }
