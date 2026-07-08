@@ -1031,13 +1031,15 @@ static void DDAdjCleanup(DDMem dd_mem)
      Adjoint memory before calling to make sure that they are all free'ed when
      calling `IDAAdjFree`. */
 
-  IDAMem ida_mem = dd_mem->ida_mem;
+  IDAMem ida_mem        = dd_mem->ida_mem;
+  DDckpntMem ck_mem     = dd_mem->ck_mem;
+  IDAadjMem ida_adj_mem = ida_mem->ida_adj_mem;
 
-  if (ida_mem->ida_adj)
+  if (ida_adj_mem != NULL && ck_mem != NULL)
   {
     /* Link IDA checkpoints in each DD checkpoint. */
 
-    for (DDckpntMem ck = dd_mem->ck_mem; ck->ck_next != NULL; ck = ck->ck_next)
+    for (DDckpntMem ck = ck_mem; ck->ck_next != NULL; ck = ck->ck_next)
     {
       IDAckpntMem ida_ck = ck->ida_ck_mem;
 
@@ -1054,9 +1056,6 @@ static void DDAdjCleanup(DDMem dd_mem)
     /* Attach these IDA checkpoints to the end of the checkpoints in the IDA
        adjoint memory. */
 
-    DDckpntMem ck_mem     = dd_mem->ck_mem;
-    IDAadjMem ida_adj_mem = ida_mem->ida_adj_mem;
-
     if (ida_adj_mem->ck_mem == NULL)
     {
       ida_adj_mem->ck_mem = ck_mem->ida_ck_mem;
@@ -1071,7 +1070,6 @@ static void DDAdjCleanup(DDMem dd_mem)
     }
   }
 
-  DDckpntMem ck_mem = dd_mem->ck_mem;
   while (ck_mem != NULL)
   {
     DDckpntMem ck_mem_next = ck_mem->ck_next;
