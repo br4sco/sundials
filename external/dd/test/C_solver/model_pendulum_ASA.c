@@ -171,6 +171,7 @@ int main(void)
   TEST_ASSERT(LSB);
 
   TEST_ASSERT(DDSetLinearSolverB(dd_mem, indexB, LSB, AB) == IDA_SUCCESS);
+  TEST_ASSERT(DDSetJacFnB(dd_mem, indexB, PendulumJacFnB) == IDA_SUCCESS);
 
   /* Set up result file */
   FILE* fileb = fopen("pendulum_ASA_backwards.csv", "w");

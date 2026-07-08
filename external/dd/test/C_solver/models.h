@@ -1088,6 +1088,65 @@ int PendulumResB(SUNDIALS_MAYBE_UNUSED sunrealtype t,
   return 0;
 }
 
+int PendulumJacFnB(SUNDIALS_MAYBE_UNUSED sunrealtype t,
+                   sunrealtype cj,
+                   N_Vector Y,
+                   N_Vector yyB,
+                   N_Vector ypB,
+                   SUNDIALS_MAYBE_UNUSED N_Vector rrB,
+                   SUNMatrix JB,
+                   void* user_data,
+                   SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
+                   SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
+                   SUNDIALS_MAYBE_UNUSED N_Vector tmp3)
+{
+  assert(user_data);
+  PendulumData* data = (PendulumData*)user_data;
+  sunrealtype m = data->m, l = data->param[0];
+
+  const sunrealtype x = P_Ith(Y, 0, 0), xp = P_Ith(Y, 0, 1),
+                    xpp = P_Ith(Y, 0, 2),
+
+                    y = P_Ith(Y, 1, 0), yp = P_Ith(Y, 1, 1),
+                    ypp = P_Ith(Y, 1, 2),
+
+                    lambda = P_Ith(Y, 2, 0),
+
+                    l1 = NV_Ith(yyB, 0), l2 = NV_Ith(yyB, 1),
+                    l3 = NV_Ith(yyB, 2), l4 = NV_Ith(yyB, 3),
+                    l5 = NV_Ith(yyB, 4),
+
+                    l1p = NV_Ith(ypB, 0), l2p = NV_Ith(ypB, 1),
+                    l3p = NV_Ith(ypB, 2), l4p = NV_Ith(ypB, 3),
+                    l5p = NV_Ith(ypB, 4);
+
+  /* Row 0 */
+  SM_ELEMENT_D(JB, 0, 0) = -lambda / l; /* l1 */
+  SM_ELEMENT_D(JB, 0, 2) = -TWO * xpp;  /* l3 */
+  SM_ELEMENT_D(JB, 0, 3) = -cj;         /* l4 */
+
+  /* Row 1 */
+  SM_ELEMENT_D(JB, 1, 0) = cj * m;                   /* l1 */
+  SM_ELEMENT_D(JB, 1, 2) = -TWO * xp + cj * TWO * x; /* l3 */
+  SM_ELEMENT_D(JB, 1, 3) = -1;                       /* l4 */
+
+  /* Row 2 */
+  SM_ELEMENT_D(JB, 2, 1) = -lambda / l; /* l1 */
+  SM_ELEMENT_D(JB, 2, 2) = -TWO * ypp;  /* l3 */
+  SM_ELEMENT_D(JB, 2, 4) = -cj;         /* l5 */
+
+  /* Row 3 */
+  SM_ELEMENT_D(JB, 3, 1) = cj * m;                   /* l2 */
+  SM_ELEMENT_D(JB, 3, 2) = -TWO * yp + cj * TWO * y; /* l3 */
+  SM_ELEMENT_D(JB, 3, 4) = -ONE;                     /* l5 */
+
+  /* Row 4 */
+  SM_ELEMENT_D(JB, 4, 0) = -x / l; /* l1 */
+  SM_ELEMENT_D(JB, 4, 1) = -y / l; /* l2 */
+
+  return 0;
+}
+
 int PendulumJacf0(SUNDIALS_MAYBE_UNUSED sunrealtype t,
                   N_Vector Y,
                   SUNMatrix A,
