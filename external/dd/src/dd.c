@@ -1079,6 +1079,7 @@ static void DDAdjCleanup(DDMem dd_mem)
     ck_mem = ck_mem_next;
   }
 
+  dd_mem->ck_mem     = NULL;
   dd_mem->ck_mem_cur = NULL;
 }
 
