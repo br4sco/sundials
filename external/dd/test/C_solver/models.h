@@ -1057,10 +1057,10 @@ int PendulumResB(SUNDIALS_MAYBE_UNUSED sunrealtype t,
                  N_Vector yyB,
                  N_Vector ypB,
                  N_Vector rrB,
-                 void* user_data)
+                 void* user_dataB)
 {
-  assert(user_data);
-  PendulumData* data = (PendulumData*)user_data;
+  assert(user_dataB);
+  PendulumData* data = (PendulumData*)user_dataB;
   sunrealtype m = data->m, l = data->param[0];
 
   const sunrealtype x = P_Ith(Y, 0, 0), xp = P_Ith(Y, 0, 1),
@@ -1099,13 +1099,13 @@ int PendulumJacFnB(SUNDIALS_MAYBE_UNUSED sunrealtype t,
                    N_Vector ypB,
                    SUNDIALS_MAYBE_UNUSED N_Vector rrB,
                    SUNMatrix JB,
-                   void* user_data,
+                   void* user_dataB,
                    SUNDIALS_MAYBE_UNUSED N_Vector tmp1,
                    SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
                    SUNDIALS_MAYBE_UNUSED N_Vector tmp3)
 {
-  assert(user_data);
-  PendulumData* data = (PendulumData*)user_data;
+  assert(user_dataB);
+  PendulumData* data = (PendulumData*)user_dataB;
   sunrealtype m = data->m, l = data->param[0];
 
   const sunrealtype x = P_Ith(Y, 0, 0), xp = P_Ith(Y, 0, 1),
@@ -1159,6 +1159,37 @@ int PendulumJacFnB(SUNDIALS_MAYBE_UNUSED sunrealtype t,
   /* Row 6 */
   SM_ELEMENT_D(JB, 6, 0) = -x / l; /* l1 */
   SM_ELEMENT_D(JB, 6, 1) = -y / l; /* l2 */
+
+  return 0;
+}
+
+int PendulumQuadRhsFnB(SUNDIALS_MAYBE_UNUSED sunrealtype t,
+                       N_Vector Y,
+                       N_Vector yyB,
+                       SUNDIALS_MAYBE_UNUSED N_Vector ypB,
+                       N_Vector rhsBQ,
+                       void* user_dataB)
+{
+  assert(user_dataB);
+  PendulumData* data = (PendulumData*)user_dataB;
+  sunrealtype m = data->m, l = data->param[0], g = data->param[1];
+
+  const sunrealtype x = P_Ith(Y, 0, 0), xp = P_Ith(Y, 0, 1),
+                    xpp = P_Ith(Y, 0, 2),
+
+                    y = P_Ith(Y, 1, 0), yp = P_Ith(Y, 1, 1),
+                    ypp = P_Ith(Y, 1, 2),
+
+                    lambda = P_Ith(Y, 2, 0),
+
+                    l1 = NV_Ith(yyB, 0), l2 = NV_Ith(yyB, 1),
+                    l3 = NV_Ith(yyB, 2), l4 = NV_Ith(yyB, 3),
+                    l5 = NV_Ith(yyB, 4), l6 = NV_Ith(yyB, 5),
+                    l7 = NV_Ith(yyB, 6);
+
+  NV_Ith(rhsBQ, 0) = -xpp * l1 - (ypp + g) * l2;
+  NV_Ith(rhsBQ, 1) = ONE + lambda / (l * l) * (x * l1 + y * l2);
+  NV_Ith(rhsBQ, 2) = -m * l2;
 
   return 0;
 }

@@ -152,6 +152,9 @@ int main(void)
 
   PendulumYyBT(data, Y, yyB, ypB);
 
+  N_Vector qB = N_VNew_Serial(PENDULUM_NP + 1, sunctx);
+  N_VScale(ZERO, qB, qB);
+
   /* Initialize backwards problem. */
   int indexB;
   TEST_ASSERT(DDCreateB(dd_mem, &indexB) == IDA_SUCCESS);
@@ -173,6 +176,9 @@ int main(void)
   TEST_ASSERT(DDSetLinearSolverB(dd_mem, indexB, LSB, AB) == IDA_SUCCESS);
   TEST_ASSERT(DDSetJacFnB(dd_mem, indexB, PendulumJacFnB) == IDA_SUCCESS);
 
+  /* Initialize backwards quadrature. */
+  TEST_ASSERT(DDQuadInitB(dd_mem, indexB, PendulumQuadRhsFnB, qB) == IDA_SUCCESS);
+
   /* Set up result file */
   FILE* fileb = fopen("pendulum_ASA_backwards.csv", "w");
   TEST_ASSERT(fileb);
@@ -182,24 +188,27 @@ int main(void)
    * ------------------------------------------------------------------------ */
 
   /* Print datafile header. */
-  fprintf(fileb, "t,xB,yB,λB,dxB,dyB,dλB\n");
+  fprintf(fileb, "t,xB,xpB,xppB,yB,ypB,yppB,λB,dG/dm,dG/dl,dG/dg\n");
 
-  double* yyB_arr = N_VGetArrayPointer(yyB);
-  double* ypB_arr = N_VGetArrayPointer(ypB);
+  const double* yyB_arr = N_VGetArrayPointer(yyB);
+  const double* ypB_arr = N_VGetArrayPointer(ypB);
+  const double* qB_arr  = N_VGetArrayPointer(qB);
 
   while (SUNTRUE)
   {
     fprintf(fileb,
-            "%f,%f,%f,%f,%f,%f,%f,%f,%f\n",
+            "%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f\n",
             tret,
             yyB_arr[0],
+            yyB_arr[1],
             yyB_arr[2],
-            yyB_arr[4],
-            ypB_arr[0],
-            ypB_arr[2],
+            ypB_arr[3],
             ypB_arr[4],
             ypB_arr[5],
-            ypB_arr[6]);
+            ypB_arr[6],
+            qB_arr[0],
+            qB_arr[1],
+            qB_arr[2]);
 
     tret -= tstep;
 
@@ -210,6 +219,7 @@ int main(void)
     TEST_ASSERT(flag >= 0);
 
     DDGetB(dd_mem, indexB, &tret, yyB, ypB);
+    DDGetQuadB(dd_mem, indexB, &tret, qB);
   }
 
   /* Cleanup */
@@ -219,6 +229,7 @@ int main(void)
   N_VDestroy(Y);
   N_VDestroy(ypB);
   N_VDestroy(yyB);
+  N_VDestroy(qB);
   DDStaticInfoDestroy(si);
   SUNContext_Free(&sunctx);
   SUNLinSolFree(LS);

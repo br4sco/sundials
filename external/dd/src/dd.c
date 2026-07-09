@@ -705,14 +705,14 @@ int DDSetSpec(DDMem dd_mem, uint8_t* spec)
       ck_mem->ck_next = ck_next;
       dd_mem->ck_mem  = ck_mem;
 
-      ida_adj_mem->ck_mem = NULL;
+      /* ida_adj_mem->ck_mem = NULL; */
     }
 
-    if (IDAAdjReInit(ida_mem) < 0)
-    {
-      DDHandleErr(DD_ERR_IDA_ERR);
-      return DD_ERR_IDA_ERR;
-    }
+    /* Flags for tracking the first calls to IDASolveF and IDASolveF (see
+       `IDAAdjReInit`). */
+    ida_adj_mem->ia_firstIDAFcall = SUNTRUE;
+    ida_adj_mem->ia_tstopIDAFcall = SUNFALSE;
+    ida_adj_mem->ia_firstIDABcall = SUNTRUE;
   }
 
   return SUN_SUCCESS;
@@ -1698,7 +1698,7 @@ int DDQuadInitB(DDMem dd_mem, int indexB, DDQuadRhsFnB rhsQB, N_Vector yQB0)
     }
   }
 
-  SUNAssert(flag < 0, flag);
+  SUNAssert(flag >= 0, flag);
 
   if (IDAQuadInitB(dd_mem->ida_mem, indexB, DDQuadRhsFnBWrapper, yQB0) < 0)
   {
@@ -2042,7 +2042,7 @@ int DDSetJacFnB(DDMem dd_mem, int indexB, DDLsJacFnB jacfn)
     }
   }
 
-  SUNAssert(flag < 0, flag);
+  SUNAssert(flag >= 0, flag);
 
   if (IDASetJacFnB(dd_mem->ida_mem, indexB, DDLsJacFnBWrapper) < 0)
   {
