@@ -146,6 +146,9 @@ int IDAAdjInit(void* ida_mem, long int steps, int interp)
     return (IDA_MEM_FAIL);
   }
 
+  /* Zero out IDAADJ_mem */
+  memset(IDAADJ_mem, 0, sizeof(*IDAADJ_mem));
+
   /* Attach IDAS memory for forward runs */
   IDA_mem->ida_adj_mem = IDAADJ_mem;
 
@@ -690,6 +693,9 @@ int IDACreateB(void* ida_mem, int* which)
                     MSG_MEM_FAIL);
     return (IDA_MEM_FAIL);
   }
+
+  /* Zero out new_IDAB_mem */
+  memset(new_IDAB_mem, 0, sizeof(*new_IDAB_mem));
 
   /* Allocate the IDAMem struct needed by this backward problem. */
   ida_memB = IDACreate(IDA_mem->ida_sunctx);
