@@ -1211,7 +1211,7 @@ int DDCreateB(DDMem dd_mem, int which[static 1])
  * -------------------------------------------------------------------------- */
 
 int DDInitB(DDMem dd_mem,
-            int which,
+            int indexB,
             DDResFnB resB,
             sunrealtype tB0,
             N_Vector yyB0,
@@ -1233,16 +1233,10 @@ int DDInitB(DDMem dd_mem,
 
   IDAMem ida_mem = dd_mem->ida_mem;
 
-  sunrealtype ti = dd_mem->dd_tinitial, tn = ida_mem->ida_tn;
-
-  /* Direction of the forward problem */
-  int sign = (tn - ti > ZERO) ? 1 : -1;
-
-  if ((sign * (tB0 - ti) < ZERO) || (sign * (tn - tB0) < ZERO))
-  {
-    DDHandleErr(SUN_ERR_ARG_OUTOFRANGE);
-    return SUN_ERR_ARG_OUTOFRANGE;
-  }
+  /* We re-init the IDA adjoint problem at each pivot, which changes
+     `ia_tinitial`, so we need to re-set the true value for tinitial (which is
+     the time when we called `DDAdjInit`). */
+  ida_mem->ida_adj_mem->ia_tinitial = dd_mem->dd_tinitial;
 
   if (yyB0 == NULL)
   {
@@ -1256,7 +1250,7 @@ int DDInitB(DDMem dd_mem,
     return SUN_ERR_ARG_CORRUPT;
   }
 
-  ProbB pb = {.pb_which = which};
+  ProbB pb = {.pb_which = indexB};
 
   pb.pb_data = calloc(1, sizeof(*pb.pb_data));
   if (pb.pb_data == NULL)
@@ -1267,14 +1261,14 @@ int DDInitB(DDMem dd_mem,
 
   pb.pb_data->db_resB = resB;
 
-  if (IDAInitB(ida_mem, which, DDResBWrapper, tB0, yyB0, ypB0) < 0)
+  if (IDAInitB(ida_mem, indexB, DDResBWrapper, tB0, yyB0, ypB0) < 0)
   {
     ProbBDestroy(pb);
     DDHandleErr(DD_ERR_IDA_ERR);
     return DD_ERR_IDA_ERR;
   }
 
-  if (IDASetUserDataB(ida_mem, which, pb.pb_data) < 0)
+  if (IDASetUserDataB(ida_mem, indexB, pb.pb_data) < 0)
   {
     ProbBDestroy(pb);
     DDHandleErr(DD_ERR_IDA_ERR);
@@ -1288,12 +1282,40 @@ int DDInitB(DDMem dd_mem,
     return SUN_ERR_OP_FAIL;
   }
 
-  /* We re-init the IDA adjoint problem at each pivot, which changes
-     `ia_tinitial`, so we need to re-set the true value for tinitial (which is
-     the time when we called `DDAdjInit`). */
-  ida_mem->ida_adj_mem->ia_tinitial = ti;
-
   dd_mem->ck_mem_cur = dd_mem->ck_mem;
+
+  return DD_SUCCESS;
+}
+
+int DDReInitB(DDMem dd_mem, int indexB, sunrealtype tB0, N_Vector yyB0, N_Vector ypB0)
+{
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
+
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  IDAMem ida_mem = dd_mem->ida_mem;
+
+  if (yyB0 == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
+
+  if (ypB0 == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
+
+  if (IDAReInitB(ida_mem, indexB, tB0, yyB0, ypB0) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
 
   return DD_SUCCESS;
 }
@@ -1801,6 +1823,27 @@ int DDQuadInitB(DDMem dd_mem, int indexB, DDQuadRhsFnB rhsQB, N_Vector yQB0)
   }
 
   return flag;
+}
+
+int DDQuadReInitB(DDMem dd_mem, int indexB, N_Vector yQB0)
+{
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_DD_MEM_NULL;
+  }
+
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  SUNAssert(yQB0 != NULL, SUN_ERR_ARG_CORRUPT);
+
+  if (IDAQuadReInitB(dd_mem->ida_mem, indexB, yQB0) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return SUN_SUCCESS;
 }
 
 int DDGetQuadB(DDMem dd_mem, int indexB, sunrealtype* tret, N_Vector yQB)

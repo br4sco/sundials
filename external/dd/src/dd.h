@@ -663,6 +663,24 @@ int DDInitB(DDMem dd_mem,
             N_Vector ypB0);
 
 /**
+ * @brief Re-initializes a backward problem with new initial conditions.
+ *
+ * @param[in] dd_mem   Solver object.
+ * @param[in] indexB   Index of the backward problem returned by DDCreateB().
+ * @param[in] tB0      New initial time for the backward problem.
+ * @param[in] yyB0     New initial state vector for the backward problem.
+ * @param[in] ypB0     New initial derivative vector for the backward problem.
+ *
+ * @return IDA_SUCCESS or an IDA error code.
+ * @see IDAReInitB
+ */
+int DDReInitB(DDMem dd_mem,
+              int indexB,
+              sunrealtype tB0,
+              N_Vector yyB0,
+              N_Vector ypB0);
+
+/**
  * @brief Computes consistent initial values for a backward problem.
  *
  * @param[in]    dd_mem  Solver object.
@@ -763,6 +781,9 @@ int DDGetConsistentICB(DDMem dd_mem,
 
 /** @brief Initializes quadrature integration for a backward problem. @see IDAQuadInitB */
 int DDQuadInitB(DDMem dd_mem, int indexB, DDQuadRhsFnB rhsQB, N_Vector yQB0);
+
+/** @brief Re-initializes backward quadrature integration with new initial values. @see IDAQuadReInitB */
+int DDQuadReInitB(DDMem dd_mem, int indexB, N_Vector yQB0);
 
 /** @brief Returns the quadrature variables of a backward problem. @see IDAGetQuadB */
 int DDGetQuadB(DDMem dd_mem, int indexB, sunrealtype* tret, N_Vector yQB);
