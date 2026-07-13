@@ -53,6 +53,26 @@
 typedef int DDResFn(sunrealtype t, N_Vector Y, N_Vector R, void* user_data);
 
 /**
+ * @brief Forward quadrature right-hand side callback function.
+ *
+ * Computes the integrand f_Q(t,Y) of the forward quadrature ODE
+ * dyQ/dt = f_Q(t,Y), co-integrated alongside the DAE without affecting its
+ * error control. The integrated value yQ(t) = ∫ f_Q(t,Y) dt is retrieved
+ * via `DDGetQuad`.
+ *
+ * @param[in] t is the independent variable.
+ * @param[in] Y are the dependent variables and their derivatives.
+ * @param[out] rrQ holds the values of f_Q(t,Y).
+ * @param[inout] user_data points to user-defined data.
+ *
+ * @return a value `0` on success, a positive value if a recoverable error
+ *         occurred and a negative value if a non-recoverable error occurred.
+ *
+ * @see IDAQuadRhsFn
+ */
+typedef int DDQuadRhsFn(sunrealtype t, N_Vector Y, N_Vector rrQ, void* user_data);
+
+/**
  * @brief Jacobian callback function, type 1, for `DDResFn`. Supports matrix
  * type `SUNMATRIX_DENSE` and `SUNMATRIX_SPARSE` of kind `CSR_MAT`.
  *
@@ -507,6 +527,32 @@ int DDSolve(DDMem dd_mem,
  */
 int DDSetSpec(DDMem dd_mem, uint8_t* spec);
 
+/**
+ * @brief Initializes forward ("pure") quadrature integration.
+ *
+ * @param[in] dd_mem  Solver object.
+ * @param[in] rhsQ    Quadrature right-hand side callback.
+ * @param[in] yQ0     Initial value of the quadrature vector.
+ *
+ * @return IDA_SUCCESS or an IDA error code.
+ * @see IDAQuadInit
+ */
+int DDQuadInit(DDMem dd_mem, DDQuadRhsFn rhsQ, N_Vector yQ0);
+
+/**
+ * @brief Re-initializes forward quadrature integration with new initial values.
+ *
+ * @param[in] dd_mem  Solver object.
+ * @param[in] yQ0     New initial value of the quadrature vector.
+ *
+ * @return IDA_SUCCESS or an IDA error code.
+ * @see IDAQuadReInit
+ */
+int DDQuadReInit(DDMem dd_mem, N_Vector yQ0);
+
+/** @brief Frees forward quadrature integration data. @see IDAQuadFree */
+void DDQuadFree(DDMem dd_mem);
+
 /** @brief Frees forward sensitivity data. @see IDASensFree */
 void DDSensFree(DDMem dd_mem);
 
@@ -642,7 +688,7 @@ int DDCalcICB(DDMem dd_mem, int indexB, sunrealtype tBout1, N_Vector yyB);
 int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB);
 
 /* --------------------------------------------------------------------------
- * Setters and Getters
+ * Additional Setters and Getters
  * -------------------------------------------------------------------------- */
 
 /** @brief Returns the underlying IDA memory (read-only). */
@@ -662,6 +708,9 @@ int DDSetStopTime(DDMem dd_mem, sunrealtype tstop);
 
 /** @brief Sets the user data pointer passed to callbacks. @see IDASetUserData */
 int DDSetUserData(DDMem dd_mem, void* user_data);
+
+/** @brief Returns the quadrature variables at the current time. @see IDAGetQuad */
+int DDGetQuad(DDMem dd_mem, sunrealtype* tret, N_Vector yQ);
 
 /** @brief Returns forward sensitivity vectors at the current time. @see IDAGetSens */
 int DDGetSens(DDMem dd_mem, sunrealtype* tret, N_Vector* yS);

@@ -1042,14 +1042,18 @@ void PendulumYyBT(SUNDIALS_MAYBE_UNUSED PendulumData* data,
   NV_Ith(ypBT, 3) = ONE; /* l4p(T) = 1 */
 }
 
-sunrealtype PendulumG(SUNDIALS_MAYBE_UNUSED sunrealtype t,
-                      N_Vector Y,
-                      void* user_data)
+int PendulumG(SUNDIALS_MAYBE_UNUSED sunrealtype t,
+              N_Vector Y,
+              N_Vector rrQ,
+              void* user_data)
 {
   assert(user_data);
+
   PendulumData* data = (PendulumData*)user_data;
   sunrealtype l      = data->param[0];
-  return P_Ith(Y, 0, 0) + l;
+  NV_Ith(rrQ, 0)     = P_Ith(Y, 0, 0) + l;
+
+  return 0;
 }
 
 int PendulumResB(SUNDIALS_MAYBE_UNUSED sunrealtype t,

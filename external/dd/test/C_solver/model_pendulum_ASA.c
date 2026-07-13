@@ -56,6 +56,10 @@ int main(void)
   N_Vector Y = N_VNew_Serial(si->N_all_orders, sunctx);
   TEST_ASSERT(Y);
 
+  /* Allocate Quadrature RHS */
+  N_Vector Q = N_VNew_Serial(1, sunctx);
+  N_VScale(ZERO, Q, Q);
+
   /* Set DAE parameters. */
   const sunrealtype m = SUN_RCONST(1.1), l = SUN_RCONST(1.2), g = SUN_RCONST(1.3);
   PendulumData* data = malloc(sizeof(*data));
@@ -83,6 +87,8 @@ int main(void)
 
   TEST_ASSERT(DDAdjInit(dd_mem, Nd, IDA_POLYNOMIAL) == IDA_SUCCESS);
 
+  TEST_ASSERT(DDQuadInit(dd_mem, PendulumG, Q) == IDA_SUCCESS);
+
   TEST_ASSERT(DDSetUserData(dd_mem, data) == IDA_SUCCESS);
 
   TEST_ASSERT(DDSSTolerances(dd_mem, SUN_RCONST(1.0e-9), SUN_RCONST(1.0e-9)) ==
@@ -105,7 +111,7 @@ int main(void)
    * ------------------------------------------------------------------------ */
 
   /* Solve and output solution. */
-  fprintf(filef, "t,x,y,λ,ΔL,p\n"); /* print header */
+  fprintf(filef, "t,x,y,λ,G,ΔL,p\n"); /* print header */
 
   int flag         = IDA_SUCCESS;
   sunrealtype t    = t0;
@@ -124,11 +130,12 @@ int main(void)
                       lam = P_Ith(Y, 2, 0);
 
     fprintf(filef,
-            "%.20f,%.20f,%.20f,%.20f,%.20f,%d\n",
+            "%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%d\n",
             t,
             x,
             y,
             lam,
+            NV_Ith(Q, 0),
             x * x + y * y - l * l,
             spec_changed ? 1 : 0);
 
@@ -137,6 +144,8 @@ int main(void)
     if (t >= tout) { break; }
 
     TEST_ASSERT(DDSolveF(dd_mem, t, &tret, Y, IDA_NORMAL, &ncheck) == IDA_SUCCESS);
+
+    TEST_ASSERT(DDGetQuad(dd_mem, &tret, Q) == IDA_SUCCESS);
   }
 
   /* ------------------------------------------------------------------------
@@ -223,10 +232,13 @@ int main(void)
   }
 
   /* Cleanup */
+  DDQuadFree(dd_mem);
+  DDAdjFree(dd_mem);
   DDFree(&dd_mem);
   PIVDestroy(&pm);
   PIVMatDestroy(pJ0);
   N_VDestroy(Y);
+  N_VDestroy(Q);
   N_VDestroy(ypB);
   N_VDestroy(yyB);
   N_VDestroy(qB);

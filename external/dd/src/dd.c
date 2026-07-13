@@ -128,12 +128,14 @@ struct DDMemRec
 
   SUNMatrix dd_J;
   DDResFn* dd_res;
+  DDQuadRhsFn* dd_quad;
   DDLsJacFn1* dd_jacfn1;
   DDLsJacFn2* dd_jacfn2;
   sunrealtype dd_t0;
   N_Vector dd_yy;
   N_Vector dd_yp;
   N_Vector dd_id;
+  N_Vector dd_Q;
   void* dd_user_data;
 
   /* Forward Sensitivities */
@@ -155,6 +157,8 @@ struct DDMemRec
  * -------------------------------------------------------------------------- */
 
 static int DDResWrapper(sunrealtype, N_Vector, N_Vector, N_Vector, void*);
+
+static int DDQuadRhsFnWrapper(sunrealtype, N_Vector, N_Vector, N_Vector, void*);
 
 static int DDLsJacFnWrapper1_Dense(sunrealtype,
                                    sunrealtype,
@@ -642,6 +646,21 @@ int DDSetSpec(DDMem dd_mem, uint8_t* spec)
     return DD_ERR_IDA_ERR;
   }
 
+  if (ida_mem->ida_quadr)
+  {
+    if (IDAGetQuadDky(ida_mem, tn, 0, dd_mem->dd_Q) < 0)
+    {
+      DDHandleErr(DD_ERR_IDA_ERR);
+      return DD_ERR_IDA_ERR;
+    }
+
+    if (IDAQuadReInit(ida_mem, dd_mem->dd_Q) < 0)
+    {
+      DDHandleErr(DD_ERR_IDA_ERR);
+      return DD_ERR_IDA_ERR;
+    }
+  }
+
   if (ida_mem->ida_sensi)
   {
     N_Vector *yyS = dd_mem->dd_yyS, *ypS = dd_mem->dd_ypS;
@@ -716,6 +735,81 @@ int DDSetSpec(DDMem dd_mem, uint8_t* spec)
   }
 
   return SUN_SUCCESS;
+}
+
+/* --------------------------------------------------------------------------
+ * DDQuadInit
+ * -------------------------------------------------------------------------- */
+
+int DDQuadInit(DDMem dd_mem, DDQuadRhsFn rhsQ, N_Vector yQ0)
+{
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_DD_MEM_NULL;
+  }
+
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  dd_mem->dd_quad = rhsQ;
+
+  if (IDAQuadInit(dd_mem->ida_mem, DDQuadRhsFnWrapper, yQ0) < 0)
+  {
+    dd_mem->dd_quad = NULL;
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  dd_mem->dd_Q = N_VClone(yQ0);
+
+  return SUN_SUCCESS;
+}
+
+static int DDQuadRhsFnWrapper(sunrealtype t,
+                              N_Vector yy,
+                              SUNDIALS_MAYBE_UNUSED N_Vector yp,
+                              N_Vector rrQ,
+                              void* user_data)
+{
+  const DDMem dd_mem = (DDMem)user_data;
+  return dd_mem->dd_quad(t, yy, rrQ, dd_mem->dd_user_data);
+}
+
+/* --------------------------------------------------------------------------
+ * DDQuadReInit
+ * -------------------------------------------------------------------------- */
+
+int DDQuadReInit(DDMem dd_mem, N_Vector yQ0)
+{
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_DD_MEM_NULL;
+  }
+
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (IDAQuadReInit(dd_mem->ida_mem, yQ0) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  return SUN_SUCCESS;
+}
+
+/* --------------------------------------------------------------------------
+ * DDQuadFree
+ * -------------------------------------------------------------------------- */
+
+void DDQuadFree(DDMem dd_mem)
+{
+  if (dd_mem == NULL) { return; }
+
+  N_VDestroy(dd_mem->dd_Q);
+  dd_mem->dd_Q = NULL;
+
+  IDAQuadFree(dd_mem->ida_mem);
 }
 
 /* --------------------------------------------------------------------------
@@ -1835,6 +1929,37 @@ int DDSetUserData(DDMem dd_mem, void* user_data)
   }
 
   dd_mem->dd_user_data = user_data;
+
+  return DD_SUCCESS;
+}
+
+int DDGetQuad(DDMem dd_mem, sunrealtype* tret, N_Vector yQ)
+{
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
+
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (tret == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
+
+  if (yQ == NULL)
+  {
+    DDHandleErr(SUN_ERR_ARG_CORRUPT);
+    return SUN_ERR_ARG_CORRUPT;
+  }
+
+  if (IDAGetQuad(dd_mem->ida_mem, tret, yQ) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
 
   return DD_SUCCESS;
 }
