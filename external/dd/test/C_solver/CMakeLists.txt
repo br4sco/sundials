@@ -32,7 +32,9 @@ set(unit_tests
     "model_pendulum_FSA\;"
     "model_pendulum_FSA\;analytic_sens_residual"
     "model_pendulum_ASA\;"
-    "dd_test_reinitb_interior\;")
+    "dd_test_reinitb_interior\;"
+    "dd_test_reinitb_after_full_pass\;"
+    "dd_test_reinitb_second_pass\;")
 
 # Sundials KLU linear solver module
 set(SUNLINSOLKLU_LIBS sundials_sunlinsolklu)

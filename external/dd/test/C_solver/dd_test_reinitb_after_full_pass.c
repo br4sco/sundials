@@ -18,20 +18,18 @@
 #include "test.h"
 
 /* -----------------------------------------------------------------------------
- * Verifies that DDReInitB (a thin wrapper over IDAReInitB) can re-initialize
- * a backward problem at an ARBITRARY interior time point of the forward
- * solution interval, not just at the initial backward time T.
+ * Verifies that DDReInitB() back to a backward problem's ORIGINAL final time
+ * T (not an interior point, unlike dd_test_reinitb_interior.c) works after
+ * the backward problem has already been driven down to t0 once. Unlike
+ * dd_test_reinitb_interior.c, the trajectory here (m=1, l=1, g=9.81,
+ * theta0=PI/4) causes DDSetSpec() pivots during the forward pass, so this
+ * exercises reinit across DD checkpoint segment boundaries.
  *
- * Model: the index-3 pendulum ASA problem already used by
- * model_pendulum_ASA.c (adjoint depends on the interpolated forward
- * trajectory, so a wrong checkpoint lookup after reinit would show up as a
- * measurable disagreement).
- *
- * Strategy: solve the backward problem directly from T down to t0 in one
- * shot (baseline). Separately, reinitialize the SAME backward problem back
- * to T, solve down to an interior point t_mid, grab the (consistent) state
- * there, reinitialize the backward problem AT t_mid with that state, and
- * continue solving down to t0. Compare the two t0 results.
+ * Strategy: (A) take one backward step from a fresh terminal condition at T
+ * as a baseline. Separately, (B) drive the SAME backward problem down to t0
+ * once, then DDReInitB() it back to T with a fresh terminal condition,
+ * DDQuadReInitB(), and take one backward step. Compare (A) and (B); they
+ * should agree.
  * ---------------------------------------------------------------------------*/
 
 #define ZERO SUN_RCONST(0.0)
@@ -41,13 +39,11 @@
 
 int main(void)
 {
-  const sunrealtype t0     = ZERO;
-  const sunrealtype tstep  = SUN_RCONST(0.1);
-  const sunrealtype tout   = SUN_RCONST(15.0);
-  const sunrealtype t_mid  = SUN_RCONST(9.0); /* interior reinit point */
-  const sunrealtype t_targ = SUN_RCONST(3.0); /* interior target point */
-  const int Nd             = 20;
-  const sunrealtype eps    = SUN_RCONST(1.0e-4);
+  const sunrealtype t0    = ZERO;
+  const sunrealtype tstep = SUN_RCONST(0.1);
+  const sunrealtype tout  = SUN_RCONST(5.0);
+  const int Nd            = 50;
+  const sunrealtype eps   = SUN_RCONST(1.0e-4);
 
   SUNContext sunctx;
   TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &sunctx) == SUN_SUCCESS);
@@ -72,13 +68,14 @@ int main(void)
   N_Vector Y = N_VNew_Serial(si->N_all_orders, sunctx);
   TEST_ASSERT(Y);
 
-  const sunrealtype m = SUN_RCONST(1.1), l = SUN_RCONST(1.2), g = SUN_RCONST(1.3);
-  PendulumData* data = malloc(sizeof(*data));
-  data->m            = m;
-  data->param[0]     = l;
-  data->param[1]     = g;
+  const sunrealtype m = SUN_RCONST(1.0), l = SUN_RCONST(1.0),
+                    g = SUN_RCONST(9.81);
+  PendulumData* data  = malloc(sizeof(*data));
+  data->m             = m;
+  data->param[0]      = l;
+  data->param[1]      = g;
 
-  sunrealtype theta0 = SUN_RCONST(PI) / SUN_RCONST(6.0);
+  sunrealtype theta0 = SUN_RCONST(PI) / SUN_RCONST(4.0);
   PendulumY0(data, theta0, Y);
 
   PivMem pm = PIVCreate(sunctx, si, pJ0, PendulumJacf0);
@@ -93,7 +90,9 @@ int main(void)
   TEST_ASSERT(DDInit(dd_mem, si, PendulumRes, PIVGetSpec(pm), t0, Y) ==
               IDA_SUCCESS);
 
-  TEST_ASSERT(DDAdjInit(dd_mem, Nd, IDA_POLYNOMIAL) == IDA_SUCCESS);
+  /* Matches the reported repro script, which uses IDAInterpType.HERMITE
+   * (unlike dd_test_reinitb_interior.c, which uses IDA_POLYNOMIAL). */
+  TEST_ASSERT(DDAdjInit(dd_mem, Nd, IDA_HERMITE) == IDA_SUCCESS);
 
   TEST_ASSERT(DDSetUserData(dd_mem, data) == IDA_SUCCESS);
 
@@ -166,43 +165,32 @@ int main(void)
   TEST_ASSERT(DDSetLinearSolverB(dd_mem, indexB, LSB, AB) == IDA_SUCCESS);
   TEST_ASSERT(DDSetJacFnB(dd_mem, indexB, PendulumJacFnB) == IDA_SUCCESS);
 
-  /* Backward quadrature: dG/dm, dG/dl, dG/dg, zero at t = T. */
   N_Vector qB = N_VNew_Serial(PENDULUM_NP + 1, sunctx);
   TEST_ASSERT(qB);
   N_VConst(ZERO, qB);
   TEST_ASSERT(DDQuadInitB(dd_mem, indexB, PendulumQuadRhsFnB, qB) == IDA_SUCCESS);
 
   /* ------------------------------------------------------------------------
-   * (A) Direct backward solve: T -> t_targ, stepping by tstep (mirrors how
-   *     model_pendulum_ASA.c drives DDSolveB -- a single large jump can hit
-   *     IDA's per-call mxsteps cap for this stiff, frequently-repivoted
-   *     problem).
+   * (A) Baseline: from a fresh terminal condition at T, take a single
+   *     backward step to T - tstep.
    * ------------------------------------------------------------------------ */
 
-  sunrealtype tgot = tret;
-  int flag;
-  while (tgot > t_targ)
-  {
-    sunrealtype tnext = tgot - tstep;
-    if (tnext < t_targ) { tnext = t_targ; }
-    flag = DDSolveB(dd_mem, tnext, IDA_NORMAL);
-    TEST_ASSERT(flag >= 0);
-    tgot = tnext;
-    TEST_ASSERT(DDGetB(dd_mem, indexB, &tgot, yyB, ypB) == IDA_SUCCESS);
-  }
+  sunrealtype tgot_baseline = tret;
+  int flag                  = DDSolveB(dd_mem, tret - tstep, IDA_NORMAL);
+  TEST_ASSERT(flag >= 0);
+  TEST_ASSERT(DDGetB(dd_mem, indexB, &tgot_baseline, yyB, ypB) == IDA_SUCCESS);
 
-  N_Vector yyB_direct = N_VClone(yyB);
-  N_VScale(ONE, yyB, yyB_direct);
+  N_Vector yyB_baseline = N_VClone(yyB);
+  N_VScale(ONE, yyB, yyB_baseline);
 
-  TEST_ASSERT(DDGetQuadB(dd_mem, indexB, &tgot, qB) == IDA_SUCCESS);
-  N_Vector qB_direct = N_VClone(qB);
-  N_VScale(ONE, qB, qB_direct);
+  TEST_ASSERT(DDGetQuadB(dd_mem, indexB, &tgot_baseline, qB) == IDA_SUCCESS);
+  N_Vector qB_baseline = N_VClone(qB);
+  N_VScale(ONE, qB, qB_baseline);
 
-  printf("Direct backward solve reached t=%.6f\n", tgot);
+  printf("Baseline single backward step reached t=%.6f\n", tgot_baseline);
 
   /* ------------------------------------------------------------------------
-   * (B) Reinit back to T, solve to interior t_mid, reinit AT t_mid using the
-   *     state obtained there, then continue solving to t_targ
+   * Full backward pass: T -> t0, stepping by tstep.
    * ------------------------------------------------------------------------ */
 
   N_VScale(ONE, yyBT, yyB);
@@ -212,76 +200,80 @@ int main(void)
   N_VConst(ZERO, qB);
   TEST_ASSERT(DDQuadReInitB(dd_mem, indexB, qB) == IDA_SUCCESS);
 
-  sunrealtype tmid_got = tret;
-  while (tmid_got > t_mid)
+  sunrealtype tB = tret;
+  while (tB > t0)
   {
-    sunrealtype tnext = tmid_got - tstep;
-    if (tnext < t_mid) { tnext = t_mid; }
-    flag = DDSolveB(dd_mem, tnext, IDA_NORMAL);
+    tB -= tstep;
+    if (tB < t0) { break; }
+    flag = DDSolveB(dd_mem, tB, IDA_NORMAL);
     TEST_ASSERT(flag >= 0);
-    tmid_got = tnext;
-    TEST_ASSERT(DDGetB(dd_mem, indexB, &tmid_got, yyB, ypB) == IDA_SUCCESS);
+    TEST_ASSERT(DDGetB(dd_mem, indexB, &tB, yyB, ypB) == IDA_SUCCESS);
+    TEST_ASSERT(DDGetQuadB(dd_mem, indexB, &tB, qB) == IDA_SUCCESS);
   }
-  printf("Backward solve to interior t_mid reached t=%.6f\n", tmid_got);
 
-  /* Grab the quadrature value accumulated so far (T -> t_mid); this is a
-   * continuation, not a reset, so it must be fed back in, not zeroed. */
-  TEST_ASSERT(DDGetQuadB(dd_mem, indexB, &tmid_got, qB) == IDA_SUCCESS);
-
-  /* Re-initialize the backward problem AT THE INTERIOR POINT t_mid_got using
-   * the (consistent) state the integrator produced there. */
-  TEST_ASSERT(DDReInitB(dd_mem, indexB, tmid_got, yyB, ypB) == IDA_SUCCESS);
-  TEST_ASSERT(DDQuadReInitB(dd_mem, indexB, qB) == IDA_SUCCESS);
-
-  tgot = tmid_got;
-  while (tgot > t_targ)
-  {
-    sunrealtype tnext = tgot - tstep;
-    if (tnext < t_targ) { tnext = t_targ; }
-    flag = DDSolveB(dd_mem, tnext, IDA_NORMAL);
-    TEST_ASSERT(flag >= 0);
-    tgot = tnext;
-    TEST_ASSERT(DDGetB(dd_mem, indexB, &tgot, yyB, ypB) == IDA_SUCCESS);
-  }
-  printf("Reinit-at-interior-point backward solve reached t=%.6f\n", tgot);
-
-  TEST_ASSERT(DDGetQuadB(dd_mem, indexB, &tgot, qB) == IDA_SUCCESS);
+  printf("Full backward pass reached t=%.6f\n", tB);
 
   /* ------------------------------------------------------------------------
-   * Compare
+   * Reinitialize the SAME backward problem back to its ORIGINAL final time T
+   * (not an interior point) using a fresh terminal condition, then resume
+   * solving one step.
    * ------------------------------------------------------------------------ */
 
-  sunrealtype* d_arr = N_VGetArrayPointer(yyB_direct);
+  N_Vector yyBT2 = N_VClone(yyBT);
+  N_Vector ypBT2 = N_VClone(yyBT);
+  PendulumYyBT(data, Y, yyBT2, ypBT2);
+
+  TEST_ASSERT(DDReInitB(dd_mem, indexB, tret, yyBT2, ypBT2) == IDA_SUCCESS);
+
+  N_Vector qB2 = N_VClone(qB);
+  N_VConst(ZERO, qB2);
+  TEST_ASSERT(DDQuadReInitB(dd_mem, indexB, qB2) == IDA_SUCCESS);
+
+  printf("Reinit-to-original-final-time call returned OK; resuming solve...\n");
+
+  sunrealtype tgot_resumed = tret;
+  flag                     = DDSolveB(dd_mem, tret - tstep, IDA_NORMAL);
+  TEST_ASSERT(flag >= 0);
+  TEST_ASSERT(DDGetB(dd_mem, indexB, &tgot_resumed, yyB, ypB) == IDA_SUCCESS);
+  TEST_ASSERT(DDGetQuadB(dd_mem, indexB, &tgot_resumed, qB2) == IDA_SUCCESS);
+
+  printf("Resumed backward solve reached t=%.6f\n", tgot_resumed);
+
+  /* ------------------------------------------------------------------------
+   * Compare (A) baseline vs. (B) reproduction
+   * ------------------------------------------------------------------------ */
+
+  sunrealtype* d_arr = N_VGetArrayPointer(yyB_baseline);
   sunrealtype* r_arr = N_VGetArrayPointer(yyB);
 
   sunrealtype maxerr = ZERO;
   for (int i = 0; i < PENDULUM_ADJ_N; ++i)
   {
     sunrealtype err = SUNRabs(d_arr[i] - r_arr[i]);
-    printf("  lambda[%d]: direct=% .12f  reinit=% .12f  |diff|=%.3e\n",
+    printf("  lambda[%d]: baseline=% .12f  resumed=% .12f  |diff|=%.3e\n",
            i,
            d_arr[i],
            r_arr[i],
            err);
     if (err > maxerr) { maxerr = err; }
   }
-  printf("max |direct - reinit| (state) = %.3e\n", maxerr);
+  printf("max |baseline - resumed| (state) = %.3e\n", maxerr);
 
-  sunrealtype* qd_arr = N_VGetArrayPointer(qB_direct);
-  sunrealtype* qr_arr = N_VGetArrayPointer(qB);
+  sunrealtype* qd_arr = N_VGetArrayPointer(qB_baseline);
+  sunrealtype* qr_arr = N_VGetArrayPointer(qB2);
 
   sunrealtype maxerr_q = ZERO;
   for (int i = 0; i < PENDULUM_NP + 1; ++i)
   {
     sunrealtype err = SUNRabs(qd_arr[i] - qr_arr[i]);
-    printf("  qB[%d]: direct=% .12f  reinit=% .12f  |diff|=%.3e\n",
+    printf("  qB[%d]: baseline=% .12f  resumed=% .12f  |diff|=%.3e\n",
            i,
            qd_arr[i],
            qr_arr[i],
            err);
     if (err > maxerr_q) { maxerr_q = err; }
   }
-  printf("max |direct - reinit| (quad)  = %.3e\n", maxerr_q);
+  printf("max |baseline - resumed| (quad)  = %.3e\n", maxerr_q);
 
   int ok = (maxerr <= eps) && (maxerr_q <= eps);
 
@@ -295,9 +287,12 @@ int main(void)
   N_VDestroy(ypB);
   N_VDestroy(yyBT);
   N_VDestroy(ypBT);
-  N_VDestroy(yyB_direct);
+  N_VDestroy(yyBT2);
+  N_VDestroy(ypBT2);
+  N_VDestroy(yyB_baseline);
   N_VDestroy(qB);
-  N_VDestroy(qB_direct);
+  N_VDestroy(qB2);
+  N_VDestroy(qB_baseline);
   DDStaticInfoDestroy(si);
   SUNContext_Free(&sunctx);
   SUNLinSolFree(LS);

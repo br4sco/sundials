@@ -738,8 +738,6 @@ int DDSetSpec(DDMem dd_mem, uint8_t* spec)
 
       ck_mem->ck_next = ck_next;
       dd_mem->ck_mem  = ck_mem;
-
-      /* ida_adj_mem->ck_mem = NULL; */
     }
 
     /* Flags for tracking the first calls to IDASolveF and IDASolveF (see
@@ -1704,32 +1702,12 @@ static void DDAdjCleanup(DDMem dd_mem)
     for (DDckpntMem ck = ck_mem; ck->ck_next != NULL; ck = ck->ck_next)
     {
       IDAckpntMem ida_ck = ck->ida_ck_mem;
-
-      /* ida_ck is set to non-NULL only on a pivot so the last DD checkpoint
-         will have NULL in this field. */
-
-      if (ida_ck != NULL)
-      {
-        while (ida_ck->ck_next != NULL) { ida_ck = ida_ck->ck_next; }
-        ida_ck->ck_next = ck->ck_next->ida_ck_mem;
-      }
+      while (ida_ck->ck_next != NULL) { ida_ck = ida_ck->ck_next; }
+      ida_ck->ck_next = ck->ck_next->ida_ck_mem;
     }
 
-    /* Attach these IDA checkpoints to the end of the checkpoints in the IDA
-       adjoint memory. */
-
-    if (ida_adj_mem->ck_mem == NULL)
-    {
-      ida_adj_mem->ck_mem = ck_mem->ida_ck_mem;
-    }
-    else
-    {
-      IDAckpntMem ck = ida_adj_mem->ck_mem;
-
-      while (ck->ck_next != NULL) { ck = ck->ck_next; }
-
-      ck->ck_next = ck_mem->ida_ck_mem;
-    }
+    /* Attach these IDA checkpoints to the IDA adjoint memory. */
+    ida_adj_mem->ck_mem = ck_mem->ida_ck_mem;
   }
 
   while (ck_mem != NULL)
@@ -1808,7 +1786,10 @@ int DDInitB(DDMem dd_mem,
   /* We re-init the IDA adjoint problem at each pivot, which changes
      `ia_tinitial`, so we need to re-set the true value for tinitial (which is
      the time when we called `DDAdjInit`). */
-  ida_mem->ida_adj_mem->ia_tinitial = dd_mem->dd_tinitial;
+
+  IDAadjMem ida_adj_mem = ida_mem->ida_adj_mem;
+
+  ida_adj_mem->ia_tinitial = dd_mem->dd_tinitial;
 
   if (yyB0 == NULL)
   {
@@ -1854,7 +1835,8 @@ int DDInitB(DDMem dd_mem,
     return SUN_ERR_OP_FAIL;
   }
 
-  dd_mem->ck_mem_cur = dd_mem->ck_mem;
+  dd_mem->ck_mem->ida_ck_mem = ida_adj_mem->ck_mem;
+  dd_mem->ck_mem_cur         = dd_mem->ck_mem;
 
   return DD_SUCCESS;
 }
@@ -1976,7 +1958,7 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
     return SUN_ERR_ARG_OUTOFRANGE;
   }
 
-  /* Starting from the current pivot checkpoint, loop through checkpoints until
+  /* Starting from the right-most checkpoint, loop through checkpoints until
      the current time of any of the backwards problems comes after the start
      time of the checkpoint (in the forward direction).  */
 
@@ -1985,7 +1967,7 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
 
   DDckpntMem ck_mem = NULL;
 
-  for (ck_mem = dd_mem->ck_mem_cur; ck_mem != NULL; ck_mem = ck_mem->ck_next)
+  for (ck_mem = dd_mem->ck_mem; ck_mem != NULL; ck_mem = ck_mem->ck_next)
   {
     sunbooleantype got_ckpnt = SUNFALSE;
 
@@ -2020,11 +2002,7 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
 
     if (ck_mem != dd_mem->ck_mem_cur)
     {
-      DDDAEState state = ck_mem->ck_state;
-      ck_mem->ck_state =
-        dd_mem->dd_state; /* this state will be destroyed when we destroy the
-        checkpoints. */
-      dd_mem->dd_state = state;
+      DDDAEStateCopy(dd_mem->dd_si, ck_mem->ck_state, dd_mem->dd_state);
 
       /* Set the initial time step for the IDA solver becase it is resetted on
        each call to `IDASolve` after a call to `IDAReInit`. This field is used

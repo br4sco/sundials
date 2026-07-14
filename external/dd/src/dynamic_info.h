@@ -27,6 +27,8 @@ DDDAEState DDDAEStateCreate(DDStaticInfo);
 
 DDDAEState DDDAEStateClone(DDStaticInfo, DDDAEState);
 
+void DDDAEStateCopy(DDStaticInfo, DDDAEState, DDDAEState);
+
 SUNErrCode DDDAEStateUpdate(DDStaticInfo, uint8_t*, DDDAEState);
 
 #endif

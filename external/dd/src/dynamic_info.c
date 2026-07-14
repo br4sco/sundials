@@ -47,19 +47,26 @@ DDDAEState DDDAEStateClone(DDStaticInfo si, DDDAEState state)
   DDDAEState new_state = DDDAEStateCreate(si);
   if (new_state == NULL) { return NULL; }
 
-  memcpy(new_state->diff_var_aliases,
-         state->diff_var_aliases,
-         si->N_diff * sizeof(*new_state->diff_var_aliases));
-
-  memcpy(new_state->yy_diff_alias_row,
-         state->yy_diff_alias_row,
-         si->N_all_orders * sizeof(*state->yy_diff_alias_row));
-
-  memcpy(new_state->yp_diff_alias_row,
-         state->yp_diff_alias_row,
-         si->N_all_orders * sizeof(*state->yp_diff_alias_row));
+  DDDAEStateCopy(si, state, new_state);
 
   return new_state;
+}
+
+void DDDAEStateCopy(DDStaticInfo si, DDDAEState src, DDDAEState dst)
+{
+  SUNFunctionBegin(si->sunctx);
+
+  memcpy(dst->diff_var_aliases,
+         src->diff_var_aliases,
+         si->N_diff * sizeof(*dst->diff_var_aliases));
+
+  memcpy(dst->yy_diff_alias_row,
+         src->yy_diff_alias_row,
+         si->N_all_orders * sizeof(*src->yy_diff_alias_row));
+
+  memcpy(dst->yp_diff_alias_row,
+         src->yp_diff_alias_row,
+         si->N_all_orders * sizeof(*src->yp_diff_alias_row));
 }
 
 SUNErrCode DDDAEStateUpdate(DDStaticInfo si, uint8_t* spec, DDDAEState state)
