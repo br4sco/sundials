@@ -19,6 +19,10 @@
  * Callback Functions
  * -------------------------------------------------------------------------- */
 
+/* ----------------------------------------------------------------------
+ * Forward Solution
+ * ---------------------------------------------------------------------- */
+
 /**
  * @brief DAE residual callback function.
  *
@@ -51,26 +55,6 @@
  *         occurred and a negative value if a non-recoverable error occurred.
  */
 typedef int DDResFn(sunrealtype t, N_Vector Y, N_Vector R, void* user_data);
-
-/**
- * @brief Forward quadrature right-hand side callback function.
- *
- * Computes the integrand f_Q(t,Y) of the forward quadrature ODE
- * dyQ/dt = f_Q(t,Y), co-integrated alongside the DAE without affecting its
- * error control. The integrated value yQ(t) = ∫ f_Q(t,Y) dt is retrieved
- * via `DDGetQuad`.
- *
- * @param[in] t is the independent variable.
- * @param[in] Y are the dependent variables and their derivatives.
- * @param[out] rrQ holds the values of f_Q(t,Y).
- * @param[inout] user_data points to user-defined data.
- *
- * @return a value `0` on success, a positive value if a recoverable error
- *         occurred and a negative value if a non-recoverable error occurred.
- *
- * @see IDAQuadRhsFn
- */
-typedef int DDQuadRhsFn(sunrealtype t, N_Vector Y, N_Vector rrQ, void* user_data);
 
 /**
  * @brief Jacobian callback function, type 1, for `DDResFn`. Supports matrix
@@ -278,6 +262,10 @@ int DDJacFn_CSC(sunindextype M,
                 N_Vector tmp2,
                 N_Vector tmp3);
 
+/* ----------------------------------------------------------------------
+ * Forward Sensitivity
+ * ---------------------------------------------------------------------- */
+
 /**
  * @brief Forward sensitivity residual callback function.
  *
@@ -312,6 +300,34 @@ typedef int DDSensResFn(int Ns,
                         N_Vector tmp1,
                         N_Vector tmp2,
                         N_Vector tmp3);
+
+/* ----------------------------------------------------------------------
+ * Forward Quadrature
+ * ---------------------------------------------------------------------- */
+
+/**
+ * @brief Forward quadrature right-hand side callback function.
+ *
+ * Computes the integrand f_Q(t,Y) of the forward quadrature ODE
+ * dyQ/dt = f_Q(t,Y), co-integrated alongside the DAE without affecting its
+ * error control. The integrated value yQ(t) = ∫ f_Q(t,Y) dt is retrieved
+ * via `DDGetQuad`.
+ *
+ * @param[in] t is the independent variable.
+ * @param[in] Y are the dependent variables and their derivatives.
+ * @param[out] rrQ holds the values of f_Q(t,Y).
+ * @param[inout] user_data points to user-defined data.
+ *
+ * @return a value `0` on success, a positive value if a recoverable error
+ *         occurred and a negative value if a non-recoverable error occurred.
+ *
+ * @see IDAQuadRhsFn
+ */
+typedef int DDQuadRhsFn(sunrealtype t, N_Vector Y, N_Vector rrQ, void* user_data);
+
+/* ----------------------------------------------------------------------
+ * Backwards
+ * ---------------------------------------------------------------------- */
 
 /**
  * @brief First-order backwards problem residual callback function.
@@ -413,6 +429,10 @@ typedef int DDLsJacFnB(sunrealtype t,
                        N_Vector tmp2,
                        N_Vector tmp3);
 
+/* ----------------------------------------------------------------------
+ * Backwards Quadrature
+ * ---------------------------------------------------------------------- */
+
 /**
  * @brief Quadrature right-hand side callback for the backward problem (see
  * `IDAQuadRhsFnB`).
@@ -452,6 +472,10 @@ typedef int DDQuadRhsFnB(sunrealtype t,
 
 /** @brief Solver session. */
 typedef struct DDMemRec* DDMem;
+
+/* --------------------------------------------------------------------------
+ * Forward Solution
+ * -------------------------------------------------------------------------- */
 
 /** @brief Creates a solver object. @see IDACreate */
 DDMem DDCreate(SUNContext sunctx);
@@ -528,30 +552,58 @@ int DDSolve(DDMem dd_mem,
 int DDSetSpec(DDMem dd_mem, uint8_t* spec);
 
 /**
- * @brief Initializes forward ("pure") quadrature integration.
+ * @brief Computes consistent initial values for the augmented DAE.
  *
  * @param[in] dd_mem  Solver object.
- * @param[in] rhsQ    Quadrature right-hand side callback.
- * @param[in] yQ0     Initial value of the quadrature vector.
+ * @param[in] icopt   IDA_YA_YDP_INIT to compute the algebraic components of Y
+ *                    and all components of Yp, or IDA_Y_INIT to compute all
+ *                    components of Y. Algebraic vs. differential is determined
+ *                    by the current DD specification; see DDSetSpec().
+ * @param[in] tout1   First output time, used to estimate the scale of t.
  *
  * @return IDA_SUCCESS or an IDA error code.
- * @see IDAQuadInit
+ * @see IDACalcIC
  */
-int DDQuadInit(DDMem dd_mem, DDQuadRhsFn rhsQ, N_Vector yQ0);
+int DDCalcIC(DDMem dd_mem, int icopt, sunrealtype tout1);
+
+/** @brief Sets the linear solver. @see IDASetLinearSolver */
+int DDSetLinearSolver(DDMem dd_mem, SUNLinearSolver LS, SUNMatrix J);
+
+/** @brief Sets the Jacobian callback for a matrix-based linear solver. @see IDASetJacFn */
+int DDSetJacFn(DDMem dd_mem, DDLsJacFn jacfn);
+
+/** @brief Sets scalar absolute and relative tolerances. @see IDASStolerances */
+int DDSSTolerances(DDMem dd_mem, sunrealtype reltol, sunrealtype abstol);
+
+/** @brief Sets the stop time. @see IDASetStopTime */
+int DDSetStopTime(DDMem dd_mem, sunrealtype tstop);
+
+/** @brief Sets the user data pointer passed to callbacks. @see IDASetUserData */
+int DDSetUserData(DDMem dd_mem, void* user_data);
 
 /**
- * @brief Re-initializes forward quadrature integration with new initial values.
+ * @brief Returns the current dummy derivative specification (length N).
  *
- * @param[in] dd_mem  Solver object.
- * @param[in] yQ0     New initial value of the quadrature vector.
- *
- * @return IDA_SUCCESS or an IDA error code.
- * @see IDAQuadReInit
+ * The returned pointer is owned by `dd_mem` and remains valid until the next
+ * call to DDSetSpec() or DDFree(). See DDSetSpec() for the encoding.
  */
-int DDQuadReInit(DDMem dd_mem, N_Vector yQ0);
+const uint8_t* DDGetSpec(DDMem dd_mem);
 
-/** @brief Frees forward quadrature integration data. @see IDAQuadFree */
-void DDQuadFree(DDMem dd_mem);
+/**
+ * @brief Returns the IDA differential/algebraic ID vector derived from the
+ *        current DD specification.
+ *
+ * ID[j] = 1.0 for differential variables, 0.0 for algebraic variables, as
+ * determined by the current spec. The returned vector is owned by `dd_mem`.
+ */
+N_Vector DDGetId(DDMem dd_mem);
+
+/** @brief Returns the corrected initial state vector. @see IDAGetConsistentIC */
+int DDGetConsistentIC(DDMem dd_mem, N_Vector yy0_mod);
+
+/* --------------------------------------------------------------------------
+ * Forward Sensitivity
+ * -------------------------------------------------------------------------- */
 
 /** @brief Frees forward sensitivity data. @see IDASensFree */
 void DDSensFree(DDMem dd_mem);
@@ -588,6 +640,55 @@ int DDSensInit(DDMem dd_mem,
  */
 int DDSensReInit(DDMem dd_mem, int ism, N_Vector* yS0);
 
+/** @brief Returns forward sensitivity vectors at the current time. @see IDAGetSens */
+int DDGetSens(DDMem dd_mem, sunrealtype* tret, N_Vector* yS);
+
+/** @brief Sets sensitivity parameters. @see IDASetSensParams */
+int DDSetSensParams(DDMem dd_mem, sunrealtype* p, sunrealtype* pbar, int* plist);
+
+/** @brief Estimates sensitivity tolerances from state tolerances. @see IDASensEEtolerances */
+int DDSensEEtolerances(DDMem dd_mem);
+
+/** @brief Returns the corrected initial sensitivity vectors. @see IDAGetSensConsistentIC */
+int DDGetSensConsistentIC(DDMem dd_mem, N_Vector* yyS0_mod);
+
+/* --------------------------------------------------------------------------
+ * Forward Quadrature
+ * -------------------------------------------------------------------------- */
+
+/**
+ * @brief Initializes forward ("pure") quadrature integration.
+ *
+ * @param[in] dd_mem  Solver object.
+ * @param[in] rhsQ    Quadrature right-hand side callback.
+ * @param[in] yQ0     Initial value of the quadrature vector.
+ *
+ * @return IDA_SUCCESS or an IDA error code.
+ * @see IDAQuadInit
+ */
+int DDQuadInit(DDMem dd_mem, DDQuadRhsFn rhsQ, N_Vector yQ0);
+
+/**
+ * @brief Re-initializes forward quadrature integration with new initial values.
+ *
+ * @param[in] dd_mem  Solver object.
+ * @param[in] yQ0     New initial value of the quadrature vector.
+ *
+ * @return IDA_SUCCESS or an IDA error code.
+ * @see IDAQuadReInit
+ */
+int DDQuadReInit(DDMem dd_mem, N_Vector yQ0);
+
+/** @brief Frees forward quadrature integration data. @see IDAQuadFree */
+void DDQuadFree(DDMem dd_mem);
+
+/** @brief Returns the quadrature variables at the current time. @see IDAGetQuad */
+int DDGetQuad(DDMem dd_mem, sunrealtype* tret, N_Vector yQ);
+
+/* --------------------------------------------------------------------------
+ * Adjoint
+ * -------------------------------------------------------------------------- */
+
 /**
  * @brief Integrates the DAE forward with check-pointing for adjoint sensitivity.
  *
@@ -609,21 +710,6 @@ int DDSolveF(DDMem dd_mem,
              int ncheck[static 1]);
 
 /**
- * @brief Computes consistent initial values for the augmented DAE.
- *
- * @param[in] dd_mem  Solver object.
- * @param[in] icopt   IDA_YA_YDP_INIT to compute the algebraic components of Y
- *                    and all components of Yp, or IDA_Y_INIT to compute all
- *                    components of Y. Algebraic vs. differential is determined
- *                    by the current DD specification; see DDSetSpec().
- * @param[in] tout1   First output time, used to estimate the scale of t.
- *
- * @return IDA_SUCCESS or an IDA error code.
- * @see IDACalcIC
- */
-int DDCalcIC(DDMem dd_mem, int icopt, sunrealtype tout1);
-
-/**
  * @brief Initializes adjoint sensitivity computation.
  *
  * @param[in] dd_mem  Solver object.
@@ -637,6 +723,10 @@ int DDAdjInit(DDMem dd_mem, long steps, int interp);
 
 /** @brief Frees adjoint sensitivity data. @see IDAAdjFree */
 void DDAdjFree(DDMem dd_mem);
+
+/* --------------------------------------------------------------------------
+ * Backwards
+ * -------------------------------------------------------------------------- */
 
 /** @brief Creates a backward problem and returns its index. @see IDACreateB */
 int DDCreateB(DDMem dd_mem, int indexB[static 1]);
@@ -705,49 +795,6 @@ int DDCalcICB(DDMem dd_mem, int indexB, sunrealtype tBout1, N_Vector yyB);
  */
 int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB);
 
-/* --------------------------------------------------------------------------
- * Additional Setters and Getters
- * -------------------------------------------------------------------------- */
-
-/** @brief Returns the underlying IDA memory (read-only). */
-void* DDGetIDAMem(DDMem dd_mem);
-
-/** @brief Sets the linear solver. @see IDASetLinearSolver */
-int DDSetLinearSolver(DDMem dd_mem, SUNLinearSolver LS, SUNMatrix J);
-
-/** @brief Sets the Jacobian callback for a matrix-based linear solver. @see IDASetJacFn */
-int DDSetJacFn(DDMem dd_mem, DDLsJacFn jacfn);
-
-/** @brief Sets scalar absolute and relative tolerances. @see IDASStolerances */
-int DDSSTolerances(DDMem dd_mem, sunrealtype reltol, sunrealtype abstol);
-
-/** @brief Sets the stop time. @see IDASetStopTime */
-int DDSetStopTime(DDMem dd_mem, sunrealtype tstop);
-
-/** @brief Sets the user data pointer passed to callbacks. @see IDASetUserData */
-int DDSetUserData(DDMem dd_mem, void* user_data);
-
-/** @brief Returns the quadrature variables at the current time. @see IDAGetQuad */
-int DDGetQuad(DDMem dd_mem, sunrealtype* tret, N_Vector yQ);
-
-/** @brief Returns forward sensitivity vectors at the current time. @see IDAGetSens */
-int DDGetSens(DDMem dd_mem, sunrealtype* tret, N_Vector* yS);
-
-/** @brief Returns the name of an IDA return flag. Caller must free the result. @see IDAGetReturnFlagName */
-char* DDGetReturnFlagName(long int flag);
-
-/** @brief Returns the corrected initial state vector. @see IDAGetConsistentIC */
-int DDGetConsistentIC(DDMem dd_mem, N_Vector yy0_mod);
-
-/** @brief Returns the corrected initial sensitivity vectors. @see IDAGetSensConsistentIC */
-int DDGetSensConsistentIC(DDMem dd_mem, N_Vector* yyS0_mod);
-
-/** @brief Sets sensitivity parameters. @see IDASetSensParams */
-int DDSetSensParams(DDMem dd_mem, sunrealtype* p, sunrealtype* pbar, int* plist);
-
-/** @brief Estimates sensitivity tolerances from state tolerances. @see IDASensEEtolerances */
-int DDSensEEtolerances(DDMem dd_mem);
-
 /** @brief Sets the linear solver for a backward problem. @see IDASetLinearSolverB */
 int DDSetLinearSolverB(DDMem dd_mem, int indexB, SUNLinearSolver LS, SUNMatrix J);
 
@@ -779,6 +826,10 @@ int DDGetConsistentICB(DDMem dd_mem,
                        N_Vector yyB0_mod,
                        N_Vector ypB0_mod);
 
+/* --------------------------------------------------------------------------
+ * Backwards Quadrature
+ * -------------------------------------------------------------------------- */
+
 /** @brief Initializes quadrature integration for a backward problem. @see IDAQuadInitB */
 int DDQuadInitB(DDMem dd_mem, int indexB, DDQuadRhsFnB rhsQB, N_Vector yQB0);
 
@@ -788,21 +839,14 @@ int DDQuadReInitB(DDMem dd_mem, int indexB, N_Vector yQB0);
 /** @brief Returns the quadrature variables of a backward problem. @see IDAGetQuadB */
 int DDGetQuadB(DDMem dd_mem, int indexB, sunrealtype* tret, N_Vector yQB);
 
-/**
- * @brief Returns the current dummy derivative specification (length N).
- *
- * The returned pointer is owned by `dd_mem` and remains valid until the next
- * call to DDSetSpec() or DDFree(). See DDSetSpec() for the encoding.
- */
-const uint8_t* DDGetSpec(DDMem dd_mem);
+/* --------------------------------------------------------------------------
+ * General Setters and Getters
+ * -------------------------------------------------------------------------- */
 
-/**
- * @brief Returns the IDA differential/algebraic ID vector derived from the
- *        current DD specification.
- *
- * ID[j] = 1.0 for differential variables, 0.0 for algebraic variables, as
- * determined by the current spec. The returned vector is owned by `dd_mem`.
- */
-N_Vector DDGetId(DDMem dd_mem);
+/** @brief Returns the underlying IDA memory (read-only). */
+void* DDGetIDAMem(DDMem dd_mem);
+
+/** @brief Returns the name of an IDA return flag. Caller must free the result. @see IDAGetReturnFlagName */
+char* DDGetReturnFlagName(long int flag);
 
 #endif
