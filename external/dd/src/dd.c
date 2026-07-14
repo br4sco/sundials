@@ -101,11 +101,20 @@ static void ProbBDestroy(ProbB pb)
   if (pb.pb_data != NULL) { free(pb.pb_data); }
 }
 
+DD_DEFINE_DYNARR(ProbB, ProbB)
+
+static DataB* ProbBFind(DynArr_ProbB pbs, int which)
+{
+  for (size_t i = 0; i < DA_LENGTH(pbs); ++i)
+  {
+    if (DA_Ith(pbs, i).pb_which == which) { return DA_Ith(pbs, i).pb_data; }
+  }
+  return NULL;
+}
+
 /* --------------------------------------------------------------------------
  * DD Session Memory
  * -------------------------------------------------------------------------- */
-
-DD_DEFINE_DYNARR(ProbB, ProbB)
 
 struct DDMemRec
 {
@@ -1798,31 +1807,19 @@ int DDQuadInitB(DDMem dd_mem, int indexB, DDQuadRhsFnB rhsQB, N_Vector yQB0)
   SUNAssert(rhsQB != NULL, SUN_ERR_ARG_CORRUPT);
   SUNAssert(yQB0 != NULL, SUN_ERR_ARG_CORRUPT);
 
-  DynArr_ProbB pbs = dd_mem->dd_probBs;
+  DataB* db = ProbBFind(dd_mem->dd_probBs, indexB);
+  SUNAssert(db != NULL, SUN_ERR_ARG_OUTOFRANGE);
 
-  int flag = SUN_ERR_ARG_OUTOFRANGE;
-
-  for (size_t i = 0; i < DA_LENGTH(pbs); ++i)
-  {
-    if (DA_Ith(pbs, i).pb_which == indexB)
-    {
-      DA_Ith(pbs, i).pb_data->db_quadB = rhsQB;
-
-      flag = SUN_SUCCESS;
-
-      break;
-    }
-  }
-
-  SUNAssert(flag >= 0, flag);
+  db->db_quadB = rhsQB;
 
   if (IDAQuadInitB(dd_mem->ida_mem, indexB, DDQuadRhsFnBWrapper, yQB0) < 0)
   {
+    db->db_quadB = NULL;
     DDHandleErr(DD_ERR_IDA_ERR);
-    flag = DD_ERR_IDA_ERR;
+    return DD_ERR_IDA_ERR;
   }
 
-  return flag;
+  return SUN_SUCCESS;
 }
 
 int DDQuadReInitB(DDMem dd_mem, int indexB, N_Vector yQB0)
@@ -2194,31 +2191,19 @@ int DDSetJacFnB(DDMem dd_mem, int indexB, DDLsJacFnB jacfn)
 
   SUNAssert(jacfn != NULL, SUN_ERR_ARG_CORRUPT);
 
-  DynArr_ProbB pbs = dd_mem->dd_probBs;
+  DataB* db = ProbBFind(dd_mem->dd_probBs, indexB);
+  SUNAssert(db != NULL, SUN_ERR_ARG_OUTOFRANGE);
 
-  int flag = SUN_ERR_ARG_OUTOFRANGE;
-
-  for (size_t i = 0; i < DA_LENGTH(pbs); ++i)
-  {
-    if (DA_Ith(pbs, i).pb_which == indexB)
-    {
-      DA_Ith(pbs, i).pb_data->db_jacB = jacfn;
-
-      flag = SUN_SUCCESS;
-
-      break;
-    }
-  }
-
-  SUNAssert(flag >= 0, flag);
+  db->db_jacB = jacfn;
 
   if (IDASetJacFnB(dd_mem->ida_mem, indexB, DDLsJacFnBWrapper) < 0)
   {
+    db->db_jacB = NULL;
     DDHandleErr(DD_ERR_IDA_ERR);
-    flag = DD_ERR_IDA_ERR;
+    return DD_ERR_IDA_ERR;
   }
 
-  return flag;
+  return SUN_SUCCESS;
 }
 
 int DDSStolerancesB(DDMem dd_mem, int indexB, sunrealtype reltolB, sunrealtype abstolB)
@@ -2250,24 +2235,12 @@ int DDSetUserDataB(DDMem dd_mem, int indexB, void* user_dataB)
 
   SUNFunctionBegin(dd_mem->sunctx);
 
-  DynArr_ProbB pbs = dd_mem->dd_probBs;
+  DataB* db = ProbBFind(dd_mem->dd_probBs, indexB);
+  SUNAssert(db != NULL, SUN_ERR_ARG_OUTOFRANGE);
 
-  int flag = SUN_ERR_ARG_OUTOFRANGE;
-  for (size_t i = 0; i < DA_LENGTH(pbs); ++i)
-  {
-    if (DA_Ith(pbs, i).pb_which == indexB)
-    {
-      DA_Ith(pbs, i).pb_data->db_user_data = user_dataB;
+  db->db_user_data = user_dataB;
 
-      flag = SUN_SUCCESS;
-
-      break;
-    }
-  }
-
-  if (flag < 0) { DDHandleErr(flag); }
-
-  return flag;
+  return SUN_SUCCESS;
 }
 
 int DDSetIdB(DDMem dd_mem, int which, N_Vector idB)
