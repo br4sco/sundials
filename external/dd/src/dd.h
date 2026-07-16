@@ -721,6 +721,20 @@ int DDSolveF(DDMem dd_mem,
  */
 int DDAdjInit(DDMem dd_mem, long steps, int interp);
 
+/**
+ * @brief Re-initializes adjoint sensitivity computation.
+ *
+ * Frees the accumulated check-point data, but keeps the list of backward
+ * problems, so new backward problems can still be added via `DDCreateB`
+ * after this call.
+ *
+ * @param[in] dd_mem  Solver object.
+ *
+ * @return IDA_SUCCESS or an IDA error code.
+ * @see IDAAdjReInit
+ */
+int DDAdjReInit(DDMem dd_mem);
+
 /** @brief Frees adjoint sensitivity data. @see IDAAdjFree */
 void DDAdjFree(DDMem dd_mem);
 

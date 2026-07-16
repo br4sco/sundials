@@ -220,7 +220,7 @@ static void DDSensCleanup(DDMem dd_mem);
 
 static int DDQuadRhsFnWrapper(sunrealtype, N_Vector, N_Vector, N_Vector, void*);
 
-static void DDAdjCleanup(DDMem dd_mem);
+static void DDAdjCleanupAndReAttachCheckpoints(DDMem dd_mem);
 
 static int DDResBWrapper(sunrealtype,
                          N_Vector,
@@ -365,7 +365,7 @@ void DDFree(DDMem* dd_mem_ptr)
   DDMem dd_mem = *dd_mem_ptr;
 
   DDSensCleanup(dd_mem);
-  DDAdjCleanup(dd_mem);
+  DDAdjCleanupAndReAttachCheckpoints(dd_mem);
   DDDAEStateDestroy(&dd_mem->dd_state);
   free(dd_mem->dd_spec);
 
@@ -566,6 +566,8 @@ int DDReInit(DDMem dd_mem, sunrealtype t0, N_Vector Y0)
     DDHandleErr(DD_ERR_IDA_ERR);
     return DD_ERR_IDA_ERR;
   }
+
+  dd_mem->dd_t0 = t0;
 
   return DD_SUCCESS;
 }
@@ -1675,7 +1677,7 @@ int DDAdjInit(DDMem dd_mem, long Nd, int interpType)
  * DDAdjFree
  * -------------------------------------------------------------------------- */
 
-static void DDAdjCleanup(DDMem dd_mem)
+static void DDAdjCleanupProblems(DDMem dd_mem)
 {
   if (dd_mem->dd_probBs != NULL)
   {
@@ -1686,7 +1688,10 @@ static void DDAdjCleanup(DDMem dd_mem)
     DynArrDestroy_ProbB(dd_mem->dd_probBs);
   }
   dd_mem->dd_probBs = NULL;
+}
 
+static void DDAdjCleanupAndReAttachCheckpoints(DDMem dd_mem)
+{
   /* Collect IDA checkpoints from DD checkpoints and attach them to the IDA
      Adjoint memory before calling to make sure that they are all free'ed when
      calling `IDAAdjFree`. */
@@ -1725,8 +1730,37 @@ void DDAdjFree(DDMem dd_mem)
 {
   if (dd_mem == NULL) { return; }
 
-  DDAdjCleanup(dd_mem);
+  DDAdjCleanupProblems(dd_mem);
+  DDAdjCleanupAndReAttachCheckpoints(dd_mem);
   IDAAdjFree(dd_mem->ida_mem);
+}
+
+/* --------------------------------------------------------------------------
+ * DDAdjReInit
+ * -------------------------------------------------------------------------- */
+
+int DDAdjReInit(DDMem dd_mem)
+{
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
+
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  DDAdjCleanupAndReAttachCheckpoints(dd_mem);
+
+  if (IDAAdjReInit(dd_mem->ida_mem) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  dd_mem->ck_mem = DDckpntCreate(dd_mem->dd_si, dd_mem->dd_t0, dd_mem->dd_state);
+  SUNAssert(dd_mem->ck_mem != NULL, SUN_ERR_MEM_FAIL);
+
+  return SUN_SUCCESS;
 }
 
 /* --------------------------------------------------------------------------
