@@ -23,8 +23,8 @@
  * down to t0 again with the same terminal condition, stepping by tstep like
  * the first pass -- completes successfully and reproduces the same result as
  * the first pass. Both passes start from the same tret with the same
- * consistent terminal condition, so they must agree exactly (within
- * tolerance).
+ * consistent terminal condition, and reuse the SAME forward checkpoints (no
+ * pivot's step/order history is disturbed), so they must agree BIT FOR BIT.
  *
  * Additionally verifies a THIRD pass that exercises DDAdjReInit(): the
  * forward problem is reset to t0 via DDReInit(), the checkpoints are
@@ -32,9 +32,16 @@
  * driven from t0 to T to regenerate checkpoints from scratch. The backward
  * problem is then reinitialized with DDReInitB() using the terminal
  * condition from this new forward solve and driven back down to t0. Since
- * the forward trajectory and terminal condition are numerically identical to
- * the first pass, the result must again agree with the first pass (within
- * tolerance).
+ * DDSetSpec() now preserves the BDF step/order history across a pivot
+ * instead of forcing an IDAReInit()-based restart, the regenerated forward
+ * trajectory reproduces the first pass's step sequence exactly, so this
+ * third pass must also agree with the first pass BIT FOR BIT, not just
+ * within tolerance -- any regression in that order-preservation would show
+ * up here immediately, rather than being masked by a loose tolerance.
+ *
+ * Parametrized over interpolation type (argv[1] = 'h' for IDA_HERMITE, 'p'
+ * for IDA_POLYNOMIAL): none of the above depends on which interpolation
+ * scheme IDAS uses internally, so both must agree BIT FOR BIT regardless.
  * ---------------------------------------------------------------------------*/
 
 #define ZERO SUN_RCONST(0.0)
@@ -42,13 +49,27 @@
 #define TWO  SUN_RCONST(2.0)
 #define FIVE SUN_RCONST(5.0)
 
-int main(void)
+int main(int argc, char* argv[])
 {
+  enum
+  {
+    HERMITE    = 'h',
+    POLYNOMIAL = 'p'
+  } interp_arg;
+
+  TEST_ASSERT(argc > 1);
+  switch (argv[1][0])
+  {
+  case HERMITE: interp_arg = HERMITE; break;
+  case POLYNOMIAL: interp_arg = POLYNOMIAL; break;
+  default: TEST_ASSERT(0);
+  }
+  const int interp = (interp_arg == HERMITE) ? IDA_HERMITE : IDA_POLYNOMIAL;
+
   const sunrealtype t0    = ZERO;
   const sunrealtype tstep = SUN_RCONST(0.1);
   const sunrealtype tout  = SUN_RCONST(5.0);
   const int Nd            = 50;
-  const sunrealtype eps   = SUN_RCONST(1.0e-4);
 
   SUNContext sunctx;
   TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &sunctx) == SUN_SUCCESS);
@@ -95,7 +116,7 @@ int main(void)
   TEST_ASSERT(DDInit(dd_mem, si, PendulumRes, PIVGetSpec(pm), t0, Y) ==
               IDA_SUCCESS);
 
-  TEST_ASSERT(DDAdjInit(dd_mem, Nd, IDA_HERMITE) == IDA_SUCCESS);
+  TEST_ASSERT(DDAdjInit(dd_mem, Nd, interp) == IDA_SUCCESS);
 
   TEST_ASSERT(DDSetUserData(dd_mem, data) == IDA_SUCCESS);
 
@@ -293,7 +314,8 @@ int main(void)
                 IDA_SUCCESS);
   }
 
-  printf("Third pass forward integration done: tret=%.4f, ncheck=%d\n", tret3,
+  printf("Third pass forward integration done: tret=%.4f, ncheck=%d\n",
+         tret3,
          ncheck3);
 
   N_Vector yyBT3 = N_VClone(yyBT);
@@ -359,8 +381,8 @@ int main(void)
   }
   printf("max |pass1 - pass3| (quad)  = %.3e\n", maxerr_q3);
 
-  int ok = (maxerr <= eps) && (maxerr_q <= eps) && (maxerr3 <= eps) &&
-           (maxerr_q3 <= eps);
+  int ok = (maxerr == ZERO) && (maxerr_q == ZERO) && (maxerr3 == ZERO) &&
+           (maxerr_q3 == ZERO);
 
   /* Cleanup */
   DDAdjFree(dd_mem);

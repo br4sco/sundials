@@ -38,9 +38,7 @@ struct DDckpntMemRec
 {
   sunrealtype ck_t0;
   sunrealtype ck_t1;
-  sunrealtype ck_h0u;
   DDDAEState ck_state;
-  IDAckpntMem ida_ck_mem;
   struct DDckpntMemRec* ck_next;
 };
 
@@ -74,6 +72,292 @@ static DDckpntMem DDckpntCreate(DDStaticInfo si, sunrealtype t, DDDAEState state
 
   ck_mem->ck_t0 = t;
   ck_mem->ck_t1 = t;
+
+  return ck_mem;
+}
+
+/* --------------------------------------------------------------------------
+ * DDIDAAckpntAllocVectors, DDIDAAckpntInit, DDIDAAckpntCopyVectors,
+ * DDAIDAckpntNew
+ *
+ * These functions are copies of the internal (`static`, not exported outside
+ * src/idas/idaa.c) SUNDIALS functions `IDAAckpntAllocVectors`,
+ * `IDAAckpntCopyVectors`, `DDIDAAckpntInit`, and `IDAAckpntNew`, respectively.
+ * -------------------------------------------------------------------------- */
+
+extern int IDAGetSolution(void* ida_mem,
+                          sunrealtype t,
+                          N_Vector yret,
+                          N_Vector ypret);
+
+static sunbooleantype DDIDAAckpntAllocVectors(IDAMem ida_mem, IDAckpntMem ck_mem)
+{
+  int j, jj;
+
+  for (j = 0; j < ck_mem->ck_phi_alloc; j++)
+  {
+    ck_mem->ck_phi[j] = N_VClone(ida_mem->ida_tempv1);
+    if (ck_mem->ck_phi[j] == NULL)
+    {
+      for (jj = 0; jj < j; jj++) { N_VDestroy(ck_mem->ck_phi[jj]); }
+      return SUNFALSE;
+    }
+  }
+
+  if (ck_mem->ck_quadr)
+  {
+    for (j = 0; j < ck_mem->ck_phi_alloc; j++)
+    {
+      ck_mem->ck_phiQ[j] = N_VClone(ida_mem->ida_eeQ);
+      if (ck_mem->ck_phiQ[j] == NULL)
+      {
+        for (jj = 0; jj < j; jj++) { N_VDestroy(ck_mem->ck_phiQ[jj]); }
+        for (jj = 0; jj < ck_mem->ck_phi_alloc; jj++)
+        {
+          N_VDestroy(ck_mem->ck_phi[jj]);
+        }
+        return SUNFALSE;
+      }
+    }
+  }
+
+  if (ck_mem->ck_sensi)
+  {
+    for (j = 0; j < ck_mem->ck_phi_alloc; j++)
+    {
+      ck_mem->ck_phiS[j] = N_VCloneVectorArray(ida_mem->ida_Ns,
+                                               ida_mem->ida_tempv1);
+      if (ck_mem->ck_phiS[j] == NULL)
+      {
+        for (jj = 0; jj < j; jj++)
+        {
+          N_VDestroyVectorArray(ck_mem->ck_phiS[jj], ida_mem->ida_Ns);
+        }
+        if (ck_mem->ck_quadr)
+        {
+          for (jj = 0; jj < ck_mem->ck_phi_alloc; jj++)
+          {
+            N_VDestroy(ck_mem->ck_phiQ[jj]);
+          }
+        }
+        for (jj = 0; jj < ck_mem->ck_phi_alloc; jj++)
+        {
+          N_VDestroy(ck_mem->ck_phi[jj]);
+        }
+        return SUNFALSE;
+      }
+    }
+  }
+
+  if (ck_mem->ck_quadr_sensi)
+  {
+    for (j = 0; j < ck_mem->ck_phi_alloc; j++)
+    {
+      ck_mem->ck_phiQS[j] = N_VCloneVectorArray(ida_mem->ida_Ns,
+                                                ida_mem->ida_eeQ);
+      if (ck_mem->ck_phiQS[j] == NULL)
+      {
+        for (jj = 0; jj < j; jj++)
+        {
+          N_VDestroyVectorArray(ck_mem->ck_phiQS[jj], ida_mem->ida_Ns);
+        }
+        for (jj = 0; jj < ck_mem->ck_phi_alloc; jj++)
+        {
+          N_VDestroyVectorArray(ck_mem->ck_phiS[jj], ida_mem->ida_Ns);
+        }
+        if (ck_mem->ck_quadr)
+        {
+          for (jj = 0; jj < ck_mem->ck_phi_alloc; jj++)
+          {
+            N_VDestroy(ck_mem->ck_phiQ[jj]);
+          }
+        }
+        for (jj = 0; jj < ck_mem->ck_phi_alloc; jj++)
+        {
+          N_VDestroy(ck_mem->ck_phi[jj]);
+        }
+        return SUNFALSE;
+      }
+    }
+  }
+
+  return SUNTRUE;
+}
+
+static void DDIDAAckpntCopyVectors(IDAMem ida_mem, IDAckpntMem ck_mem)
+{
+  int j, is;
+
+  for (j = 0; j < ck_mem->ck_phi_alloc; j++) { ida_mem->ida_cvals[j] = ONE; }
+
+  (void)N_VScaleVectorArray(ck_mem->ck_phi_alloc,
+                            ida_mem->ida_cvals,
+                            ida_mem->ida_phi,
+                            ck_mem->ck_phi);
+
+  if (ck_mem->ck_quadr)
+  {
+    (void)N_VScaleVectorArray(ck_mem->ck_phi_alloc,
+                              ida_mem->ida_cvals,
+                              ida_mem->ida_phiQ,
+                              ck_mem->ck_phiQ);
+  }
+
+  if (ck_mem->ck_sensi || ck_mem->ck_quadr_sensi)
+  {
+    for (j = 0; j < ck_mem->ck_phi_alloc; j++)
+    {
+      for (is = 0; is < ida_mem->ida_Ns; is++)
+      {
+        ida_mem->ida_cvals[j * ida_mem->ida_Ns + is] = ONE;
+      }
+    }
+  }
+
+  if (ck_mem->ck_sensi)
+  {
+    for (j = 0; j < ck_mem->ck_phi_alloc; j++)
+    {
+      for (is = 0; is < ida_mem->ida_Ns; is++)
+      {
+        ida_mem->ida_Xvecs[j * ida_mem->ida_Ns + is] = ida_mem->ida_phiS[j][is];
+        ida_mem->ida_Zvecs[j * ida_mem->ida_Ns + is] = ck_mem->ck_phiS[j][is];
+      }
+    }
+
+    (void)N_VScaleVectorArray(ck_mem->ck_phi_alloc * ida_mem->ida_Ns,
+                              ida_mem->ida_cvals,
+                              ida_mem->ida_Xvecs,
+                              ida_mem->ida_Zvecs);
+  }
+
+  if (ck_mem->ck_quadr_sensi)
+  {
+    for (j = 0; j < ck_mem->ck_phi_alloc; j++)
+    {
+      for (is = 0; is < ida_mem->ida_Ns; is++)
+      {
+        ida_mem->ida_Xvecs[j * ida_mem->ida_Ns + is] = ida_mem->ida_phiQS[j][is];
+        ida_mem->ida_Zvecs[j * ida_mem->ida_Ns + is] = ck_mem->ck_phiQS[j][is];
+      }
+    }
+
+    (void)N_VScaleVectorArray(ck_mem->ck_phi_alloc * ida_mem->ida_Ns,
+                              ida_mem->ida_cvals,
+                              ida_mem->ida_Xvecs,
+                              ida_mem->ida_Zvecs);
+  }
+}
+
+static IDAckpntMem DDIDAAckpntInit(IDAMem IDA_mem)
+{
+  IDAckpntMem ck_mem;
+
+  /* Allocate space for ckdata */
+  ck_mem = (IDAckpntMem)malloc(sizeof(struct IDAckpntMemRec));
+  if (NULL == ck_mem) { return (NULL); }
+
+  ck_mem->ck_t0  = IDA_mem->ida_tn;
+  ck_mem->ck_nst = 0;
+  ck_mem->ck_kk  = 1;
+  ck_mem->ck_hh  = ZERO;
+
+  /* Test if we need to carry quadratures */
+  ck_mem->ck_quadr = IDA_mem->ida_quadr && IDA_mem->ida_errconQ;
+
+  /* Test if we need to carry sensitivities */
+  ck_mem->ck_sensi = IDA_mem->ida_sensi;
+  if (ck_mem->ck_sensi) { ck_mem->ck_Ns = IDA_mem->ida_Ns; }
+
+  /* Test if we need to carry quadrature sensitivities */
+  ck_mem->ck_quadr_sensi = IDA_mem->ida_quadr_sensi && IDA_mem->ida_errconQS;
+
+  /* Alloc 3: current order, i.e. 1,  +   2. */
+  ck_mem->ck_phi_alloc = 3;
+
+  if (!DDIDAAckpntAllocVectors(IDA_mem, ck_mem))
+  {
+    free(ck_mem);
+    ck_mem = NULL;
+    return (NULL);
+  }
+  /* Save phi* vectors from IDA_mem to ck_mem. */
+  DDIDAAckpntCopyVectors(IDA_mem, ck_mem);
+
+  /* Next in list */
+  ck_mem->ck_next = NULL;
+
+  return (ck_mem);
+}
+
+static IDAckpntMem DDIDAAckpntNew(IDAMem ida_mem)
+{
+  IDAckpntMem ck_mem = (IDAckpntMem)malloc(sizeof(struct IDAckpntMemRec));
+  if (ck_mem == NULL) { return NULL; }
+
+  ck_mem->ck_nst = ida_mem->ida_nst;
+
+  /* Deliberately NOT ida_mem->ida_tretlast: upstream's checkpoints are only
+     ever created inside IDASolveF's own IDA_ONE_STEP-mode stepping loop
+     (idaa.c:569), where tn == tretlast always holds right after a step, so
+     copying tretlast verbatim is a no-op there. DD drives the forward
+     solve in IDA_NORMAL mode (per-tstep outputs), where IDA can land
+     internally past the requested output time before interpolating back --
+     so tn and tretlast legitimately diverge at the moment a pivot happens.
+     If we captured the stale tretlast here, then restoring it via
+     IDAAckpntGet() and immediately replaying with IDA_ONE_STEP (as
+     IDAAdataStore() does) would hit IDAStopTest1()'s "tn already past
+     tretlast" case (idas.c:5663) and return the CURRENT point again
+     without taking a real step -- producing a duplicate/degenerate first
+     replay point and, eventually, step-size collapse. Keep tn/tretlast
+     consistent in the checkpoint, matching the invariant vanilla
+     checkpoints always have. */
+
+  ck_mem->ck_tretlast = ida_mem->ida_tn;
+  ck_mem->ck_kk       = ida_mem->ida_kk;
+  ck_mem->ck_kused    = ida_mem->ida_kused;
+  ck_mem->ck_knew     = ida_mem->ida_knew;
+  ck_mem->ck_phase    = ida_mem->ida_phase;
+  ck_mem->ck_ns       = ida_mem->ida_ns;
+  ck_mem->ck_hh       = ida_mem->ida_hh;
+  ck_mem->ck_hused    = ida_mem->ida_hused;
+  ck_mem->ck_eta      = ida_mem->ida_eta;
+  ck_mem->ck_cj       = ida_mem->ida_cj;
+  ck_mem->ck_cjlast   = ida_mem->ida_cjlast;
+  ck_mem->ck_cjold    = ida_mem->ida_cjold;
+  ck_mem->ck_cjratio  = ida_mem->ida_cjratio;
+  ck_mem->ck_ss       = ida_mem->ida_ss;
+  ck_mem->ck_ssS      = ida_mem->ida_ssS;
+  ck_mem->ck_t0       = ida_mem->ida_tn;
+
+  for (int j = 0; j < MXORDP1; j++)
+  {
+    ck_mem->ck_psi[j]   = ida_mem->ida_psi[j];
+    ck_mem->ck_alpha[j] = ida_mem->ida_alpha[j];
+    ck_mem->ck_beta[j]  = ida_mem->ida_beta[j];
+    ck_mem->ck_sigma[j] = ida_mem->ida_sigma[j];
+    ck_mem->ck_gamma[j] = ida_mem->ida_gamma[j];
+  }
+
+  ck_mem->ck_quadr = ida_mem->ida_quadr && ida_mem->ida_errconQ;
+
+  ck_mem->ck_sensi = ida_mem->ida_sensi;
+  if (ck_mem->ck_sensi) { ck_mem->ck_Ns = ida_mem->ida_Ns; }
+
+  ck_mem->ck_quadr_sensi = ida_mem->ida_quadr_sensi && ida_mem->ida_errconQS;
+
+  /* Unlike IDAAckpntInit (hardcoded order 1, alloc 3), size storage for the
+     integrator's ACTUAL current order -- this is the whole point. */
+  ck_mem->ck_phi_alloc = (ida_mem->ida_kk + 2 < MXORDP1) ? ida_mem->ida_kk + 2
+                                                         : MXORDP1;
+
+  if (!DDIDAAckpntAllocVectors(ida_mem, ck_mem))
+  {
+    free(ck_mem);
+    return NULL;
+  }
+
+  DDIDAAckpntCopyVectors(ida_mem, ck_mem);
 
   return ck_mem;
 }
@@ -155,8 +439,6 @@ struct DDMemRec
 
   /* Backwards Problem */
 
-  sunrealtype dd_tinitial;
-  sunrealtype dd_tfinal;
   DynArr_ProbB dd_probBs;
   DDckpntMem ck_mem;
   DDckpntMem ck_mem_cur;
@@ -221,7 +503,7 @@ static void DDSensCleanup(DDMem dd_mem);
 
 static int DDQuadRhsFnWrapper(sunrealtype, N_Vector, N_Vector, N_Vector, void*);
 
-static void DDAdjCleanupAndReAttachCheckpoints(DDMem dd_mem);
+static void DDAdjCleanupCheckpoints(DDMem dd_mem);
 
 static int DDResBWrapper(sunrealtype,
                          N_Vector,
@@ -366,7 +648,7 @@ void DDFree(DDMem* dd_mem_ptr)
   DDMem dd_mem = *dd_mem_ptr;
 
   DDSensCleanup(dd_mem);
-  DDAdjCleanupAndReAttachCheckpoints(dd_mem);
+  DDAdjCleanupCheckpoints(dd_mem);
   DDDAEStateDestroy(&dd_mem->dd_state);
   free(dd_mem->dd_spec);
 
@@ -656,14 +938,8 @@ int DDSetSpec(DDMem dd_mem, uint8_t* spec)
 
   IDAMem ida_mem = dd_mem->ida_mem;
 
-  N_Vector yy = dd_mem->dd_yy, yp = dd_mem->dd_yp, id = dd_mem->dd_id;
+  N_Vector id          = dd_mem->dd_id;
   const sunrealtype tn = ida_mem->ida_tn;
-
-  if (IDAGetDky(ida_mem, tn, 0, yy) < 0)
-  {
-    DDHandleErr(DD_ERR_IDA_ERR);
-    return DD_ERR_IDA_ERR;
-  }
 
   DDSetId(si, state, id);
 
@@ -673,50 +949,19 @@ int DDSetSpec(DDMem dd_mem, uint8_t* spec)
     return DD_ERR_IDA_ERR;
   }
 
-  DDSetYpFromY(si, state, yy, yp);
+  /* Since a pivot changes the residual structure we must make sure that
+     anything that depends on the Jacobian is re-computed.  */
 
-  if (IDAReInit(ida_mem, tn, yy, yp) < 0)
+  if (ida_mem->ida_linit != NULL)
   {
-    DDHandleErr(DD_ERR_IDA_ERR);
-    return DD_ERR_IDA_ERR;
-  }
-
-  if (ida_mem->ida_quadr)
-  {
-    if (IDAGetQuadDky(ida_mem, tn, 0, dd_mem->dd_Q) < 0)
-    {
-      DDHandleErr(DD_ERR_IDA_ERR);
-      return DD_ERR_IDA_ERR;
-    }
-
-    if (IDAQuadReInit(ida_mem, dd_mem->dd_Q) < 0)
+    if (ida_mem->ida_linit(ida_mem) != 0)
     {
       DDHandleErr(DD_ERR_IDA_ERR);
       return DD_ERR_IDA_ERR;
     }
   }
 
-  if (ida_mem->ida_sensi)
-  {
-    N_Vector *yyS = dd_mem->dd_yyS, *ypS = dd_mem->dd_ypS;
-
-    if (IDAGetSensDky(ida_mem, tn, 0, yyS) < 0)
-    {
-      DDHandleErr(DD_ERR_IDA_ERR);
-      return DD_ERR_IDA_ERR;
-    }
-
-    for (int i = 0; i < ida_mem->ida_Ns; ++i)
-    {
-      DDSetYpFromY(si, state, yyS[i], ypS[i]);
-    }
-
-    if (IDASensReInit(ida_mem, ida_mem->ida_ism, yyS, ypS) < 0)
-    {
-      DDHandleErr(DD_ERR_IDA_ERR);
-      return DD_ERR_IDA_ERR;
-    }
-  }
+  ida_mem->ida_forceSetup = SUNTRUE;
 
   if (ida_mem->ida_adj)
   {
@@ -737,17 +982,10 @@ int DDSetSpec(DDMem dd_mem, uint8_t* spec)
     else
     {
       /* Normal case: IDA checkpoints were accumulated since the last pivot.
-         Store them in the current DD checkpoint and prepend a fresh one.
+         Store them in the current DD checkpoint and prepend a fresh one. */
 
-         NOTE(oerikss, 2025-04-11): We need to set the internal checkpoint
-         field to NULL to prevent `IDAAdjReInit` from deleting all accumulated
-         checkpoints. We restore these as we integrate the backwards problem
-         over the DD checkpoints. We later take care of deleting the
-         checkpoints in `DDAdjFree`. */
-
-      DDckpntMem ck_next  = dd_mem->ck_mem;
-      ck_next->ck_t1      = tn;
-      ck_next->ida_ck_mem = ida_adj_mem->ck_mem;
+      DDckpntMem ck_next = dd_mem->ck_mem;
+      ck_next->ck_t1     = tn;
 
       DDckpntMem ck_mem = DDckpntCreate(si, tn, state);
       if (ck_mem == NULL)
@@ -758,13 +996,25 @@ int DDSetSpec(DDMem dd_mem, uint8_t* spec)
 
       ck_mem->ck_next = ck_next;
       dd_mem->ck_mem  = ck_mem;
-    }
 
-    /* Flags for tracking the first calls to IDASolveF and IDASolveF (see
-       `IDAAdjReInit`). */
-    ida_adj_mem->ia_firstIDAFcall = SUNTRUE;
-    ida_adj_mem->ia_tstopIDAFcall = SUNFALSE;
-    ida_adj_mem->ia_firstIDABcall = SUNTRUE;
+      /* Prepend a new IDA-level checkpoint capturing the integrator's
+         ACTUAL current order/step history (DDAIDAckpntNew). */
+
+      IDAckpntMem tmp = DDIDAAckpntNew(ida_mem);
+      if (tmp == NULL)
+      {
+        DDHandleErr(SUN_ERR_MEM_FAIL);
+        return DD_ERR_IDA_ERR;
+      }
+
+      tmp->ck_next = ida_adj_mem->ck_mem;
+
+      ida_adj_mem->ck_mem = tmp;
+      ida_adj_mem->ia_nckpnts++;
+
+      ida_adj_mem->dt_mem[0]->t = tmp->ck_t0;
+      ida_adj_mem->ia_storePnt(ida_mem, ida_adj_mem->dt_mem[0]);
+    }
   }
 
   return SUN_SUCCESS;
@@ -1606,6 +1856,342 @@ int DDGetQuad(DDMem dd_mem, sunrealtype* tret, N_Vector yQ)
  * DDSolveF
  * -------------------------------------------------------------------------- */
 
+/* This is a copy of `IDASolveF` from src/idas/idaa.c modified to not assume a
+   fixed number of solver steps between each checkpoint. */
+static int DDIDASolveF(void* ida_mem,
+                       sunrealtype tout,
+                       sunrealtype* tret,
+                       N_Vector yret,
+                       N_Vector ypret,
+                       int itask,
+                       int* ncheckPtr)
+{
+  IDAadjMem IDAADJ_mem;
+  IDAMem IDA_mem;
+  IDAckpntMem tmp;
+  IDAdtpntMem* dt_mem;
+  long int nstloc;
+  int flag, i;
+  sunbooleantype allocOK, earlyret;
+  sunrealtype ttest;
+
+  /* Is the mem OK? */
+  if (ida_mem == NULL)
+  {
+    IDAProcessError(NULL,
+                    IDA_MEM_NULL,
+                    __LINE__,
+                    __func__,
+                    __FILE__,
+                    MSGAM_NULL_IDAMEM);
+    return (IDA_MEM_NULL);
+  }
+  IDA_mem = (IDAMem)ida_mem;
+
+  SUNDIALS_MARK_FUNCTION_BEGIN(IDA_PROFILER);
+
+  /* Is ASA initialized ? */
+  if (IDA_mem->ida_adjMallocDone == SUNFALSE)
+  {
+    IDAProcessError(IDA_mem, IDA_NO_ADJ, __LINE__, __func__, __FILE__, MSGAM_NO_ADJ);
+    SUNDIALS_MARK_FUNCTION_END(IDA_PROFILER);
+    return (IDA_NO_ADJ);
+  }
+  IDAADJ_mem = IDA_mem->ida_adj_mem;
+
+  /* Check for yret != NULL */
+  if (yret == NULL)
+  {
+    IDAProcessError(IDA_mem,
+                    IDA_ILL_INPUT,
+                    __LINE__,
+                    __func__,
+                    __FILE__,
+                    MSG_YRET_NULL);
+    SUNDIALS_MARK_FUNCTION_END(IDA_PROFILER);
+    return (IDA_ILL_INPUT);
+  }
+
+  /* Check for ypret != NULL */
+  if (ypret == NULL)
+  {
+    IDAProcessError(IDA_mem,
+                    IDA_ILL_INPUT,
+                    __LINE__,
+                    __func__,
+                    __FILE__,
+                    MSG_YPRET_NULL);
+    SUNDIALS_MARK_FUNCTION_END(IDA_PROFILER);
+    return (IDA_ILL_INPUT);
+  }
+  /* Check for tret != NULL */
+  if (tret == NULL)
+  {
+    IDAProcessError(IDA_mem,
+                    IDA_ILL_INPUT,
+                    __LINE__,
+                    __func__,
+                    __FILE__,
+                    MSG_TRET_NULL);
+    SUNDIALS_MARK_FUNCTION_END(IDA_PROFILER);
+    return (IDA_ILL_INPUT);
+  }
+
+  /* Check for valid itask */
+  if ((itask != IDA_NORMAL) && (itask != IDA_ONE_STEP))
+  {
+    IDAProcessError(IDA_mem,
+                    IDA_ILL_INPUT,
+                    __LINE__,
+                    __func__,
+                    __FILE__,
+                    MSG_BAD_ITASK);
+    SUNDIALS_MARK_FUNCTION_END(IDA_PROFILER);
+    return (IDA_ILL_INPUT);
+  }
+
+  /* All memory checks done, proceed ... */
+
+  dt_mem = IDAADJ_mem->dt_mem;
+
+  /* If tstop is enabled, store some info */
+  if (IDA_mem->ida_tstopset)
+  {
+    IDAADJ_mem->ia_tstopIDAFcall = SUNTRUE;
+    IDAADJ_mem->ia_tstopIDAF     = IDA_mem->ida_tstop;
+  }
+
+  /* On the first step:
+   *   - set tinitial
+   *   - initialize list of check points
+   *   - if needed, initialize the interpolation module
+   *   - load dt_mem[0]
+   * On subsequent steps, test if taking a new step is necessary.
+   */
+  if (IDAADJ_mem->ia_firstIDAFcall)
+  {
+    IDAADJ_mem->ia_tinitial = IDA_mem->ida_tn;
+    IDAADJ_mem->ck_mem      = DDIDAAckpntInit(IDA_mem);
+    if (IDAADJ_mem->ck_mem == NULL)
+    {
+      IDAProcessError(IDA_mem,
+                      IDA_MEM_FAIL,
+                      __LINE__,
+                      __func__,
+                      __FILE__,
+                      MSG_MEM_FAIL);
+      SUNDIALS_MARK_FUNCTION_END(IDA_PROFILER);
+      return (IDA_MEM_FAIL);
+    }
+
+    if (!IDAADJ_mem->ia_mallocDone)
+    {
+      /* Do we need to store sensitivities? */
+      if (!IDA_mem->ida_sensi) { IDAADJ_mem->ia_storeSensi = SUNFALSE; }
+
+      /* Allocate space for interpolation data */
+      allocOK = IDAADJ_mem->ia_malloc(IDA_mem);
+      if (!allocOK)
+      {
+        IDAProcessError(IDA_mem,
+                        IDA_MEM_FAIL,
+                        __LINE__,
+                        __func__,
+                        __FILE__,
+                        MSG_MEM_FAIL);
+        SUNDIALS_MARK_FUNCTION_END(IDA_PROFILER);
+        return (IDA_MEM_FAIL);
+      }
+
+      /* Rename phi and, if needed, phiS for use in interpolation */
+      for (i = 0; i < MXORDP1; i++)
+      {
+        IDAADJ_mem->ia_Y[i] = IDA_mem->ida_phi[i];
+      }
+      if (IDAADJ_mem->ia_storeSensi)
+      {
+        for (i = 0; i < MXORDP1; i++)
+        {
+          IDAADJ_mem->ia_YS[i] = IDA_mem->ida_phiS[i];
+        }
+      }
+
+      IDAADJ_mem->ia_mallocDone = SUNTRUE;
+    }
+
+    dt_mem[0]->t = IDAADJ_mem->ck_mem->ck_t0;
+    IDAADJ_mem->ia_storePnt(IDA_mem, dt_mem[0]);
+
+    IDAADJ_mem->ia_firstIDAFcall = SUNFALSE;
+  }
+  else if (itask == IDA_NORMAL)
+  {
+    /* When in normal mode, check if tout was passed or if a previous root was
+       not reported and return an interpolated solution. No changes to ck_mem
+       or dt_mem are needed. */
+
+    /* flag to signal if an early return is needed */
+    earlyret = SUNFALSE;
+
+    /* if a root needs to be reported compare tout to troot otherwise compare
+       to the rent time tn */
+    ttest = (IDAADJ_mem->ia_rootret) ? IDAADJ_mem->ia_troot : IDA_mem->ida_tn;
+
+    if ((ttest - tout) * IDA_mem->ida_hh >= ZERO)
+    {
+      /* ttest is after tout, interpolate to tout */
+      *tret    = tout;
+      flag     = IDAGetSolution(IDA_mem, tout, yret, ypret);
+      earlyret = SUNTRUE;
+    }
+    else if (IDAADJ_mem->ia_rootret)
+    {
+      /* tout is after troot, interpolate to troot */
+      *tret = IDAADJ_mem->ia_troot;
+      flag  = IDAGetSolution(IDA_mem, IDAADJ_mem->ia_troot, yret, ypret);
+      flag  = IDA_ROOT_RETURN;
+      IDAADJ_mem->ia_rootret = SUNFALSE;
+      earlyret               = SUNTRUE;
+    }
+
+    /* return if necessary */
+    if (earlyret)
+    {
+      *ncheckPtr               = IDAADJ_mem->ia_nckpnts;
+      IDAADJ_mem->ia_newData   = SUNTRUE;
+      IDAADJ_mem->ia_ckpntData = IDAADJ_mem->ck_mem;
+      /* Steps since the *current* checkpoint (periodic or pivot-created),
+         not `nst % ia_nsteps`: pivots create extra checkpoints at nst
+         values that aren't multiples of ia_nsteps, so the ring-buffer
+         position must be tracked relative to ck_mem->ck_nst instead of a
+         fixed global grid. */
+      IDAADJ_mem->ia_np = IDA_mem->ida_nst - IDAADJ_mem->ck_mem->ck_nst + 1;
+      SUNDIALS_MARK_FUNCTION_END(IDA_PROFILER);
+      return (flag);
+    }
+  }
+
+  /* Integrate to tout (in IDA_ONE_STEP mode) while loading check points */
+  nstloc = 0;
+  for (;;)
+  {
+    /* Check for too many steps */
+
+    if ((IDA_mem->ida_mxstep > 0) && (nstloc >= IDA_mem->ida_mxstep))
+    {
+      IDAProcessError(IDA_mem,
+                      IDA_TOO_MUCH_WORK,
+                      __LINE__,
+                      __func__,
+                      __FILE__,
+                      MSG_MAX_STEPS,
+                      IDA_mem->ida_tn);
+      flag = IDA_TOO_MUCH_WORK;
+      break;
+    }
+
+    /* Perform one step of the integration */
+
+    flag = IDASolve(IDA_mem, tout, tret, yret, ypret, IDA_ONE_STEP);
+    if (flag < 0) { break; }
+
+    nstloc++;
+
+    /* Test if a new check point is needed.
+
+       This is deliberately NOT `nst % ia_nsteps == 0`: that assumes every
+       checkpoint sits on a fixed global grid, which only holds if
+       checkpoints are ever created periodically. DDSetSpec() also creates
+       checkpoints at pivots, at arbitrary nst values -- so "periodic"
+       spacing has to be measured relative to whichever checkpoint is
+       currently active (ck_mem->ck_nst), not to a global multiple of
+       ia_nsteps. This also means a pivot restarts the periodic countdown,
+       instead of leaving a short, misaligned remainder until the next
+       global-grid boundary. */
+
+    long int ia_nlocal = IDA_mem->ida_nst - IDAADJ_mem->ck_mem->ck_nst;
+
+    if (ia_nlocal == IDAADJ_mem->ia_nsteps)
+    {
+      IDAADJ_mem->ck_mem->ck_t1 = IDA_mem->ida_tn;
+
+      /* Create a new check point, load it, and append it to the list */
+      tmp = DDIDAAckpntNew(IDA_mem);
+      if (tmp == NULL)
+      {
+        flag = IDA_MEM_FAIL;
+        break;
+      }
+
+      tmp->ck_next       = IDAADJ_mem->ck_mem;
+      IDAADJ_mem->ck_mem = tmp;
+      IDAADJ_mem->ia_nckpnts++;
+
+      IDA_mem->ida_forceSetup = SUNTRUE;
+
+      /* Reset i=0 and load dt_mem[0] */
+      dt_mem[0]->t = IDAADJ_mem->ck_mem->ck_t0;
+      IDAADJ_mem->ia_storePnt(IDA_mem, dt_mem[0]);
+    }
+    else
+    {
+      /* Load next point in dt_mem, indexed by steps since the current
+         checkpoint (see above), not nst % ia_nsteps. */
+      dt_mem[ia_nlocal]->t = IDA_mem->ida_tn;
+      IDAADJ_mem->ia_storePnt(IDA_mem, dt_mem[ia_nlocal]);
+    }
+
+    /* Set t1 field of the current check point structure
+       for the case in which there will be no future
+       check points */
+    IDAADJ_mem->ck_mem->ck_t1 = IDA_mem->ida_tn;
+
+    /* tfinal is now set to tn */
+    IDAADJ_mem->ia_tfinal = IDA_mem->ida_tn;
+
+    /* Return if in IDA_ONE_STEP mode */
+    if (itask == IDA_ONE_STEP) { break; }
+
+    /* IDA_NORMAL_STEP returns */
+
+    /* Return if tout reached */
+    if ((*tret - tout) * IDA_mem->ida_hh >= ZERO)
+    {
+      /* If this was a root return, save the root time to return later */
+      if (flag == IDA_ROOT_RETURN)
+      {
+        IDAADJ_mem->ia_rootret = SUNTRUE;
+        IDAADJ_mem->ia_troot   = *tret;
+      }
+
+      /* Get solution value at tout to return now */
+      *tret = tout;
+      flag  = IDAGetSolution(IDA_mem, tout, yret, ypret);
+
+      /* Reset tretlast in IDA_mem so that IDAGetQuad and IDAGetSens
+       * evaluate quadratures and/or sensitivities at the proper time */
+      IDA_mem->ida_tretlast = tout;
+
+      break;
+    }
+
+    /* Return if tstop or a root was found */
+    if ((flag == IDA_TSTOP_RETURN) || (flag == IDA_ROOT_RETURN)) { break; }
+
+  } /* end of for(;;) */
+
+  /* Get ncheck from IDAADJ_mem */
+  *ncheckPtr = IDAADJ_mem->ia_nckpnts;
+
+  /* Data is available for the last interval */
+  IDAADJ_mem->ia_newData   = SUNTRUE;
+  IDAADJ_mem->ia_ckpntData = IDAADJ_mem->ck_mem;
+  IDAADJ_mem->ia_np        = IDA_mem->ida_nst - IDAADJ_mem->ck_mem->ck_nst + 1;
+
+  SUNDIALS_MARK_FUNCTION_END(IDA_PROFILER);
+  return (flag);
+}
+
 int DDSolveF(DDMem dd_mem,
              sunrealtype tout,
              sunrealtype tret[static 1],
@@ -1630,7 +2216,7 @@ int DDSolveF(DDMem dd_mem,
   IDAMem ida_mem = dd_mem->ida_mem;
   N_Vector yp    = dd_mem->dd_yp;
 
-  int flag = IDASolveF(ida_mem, tout, tret, Y, yp, itask, ncheck);
+  int flag = DDIDASolveF(ida_mem, tout, tret, Y, yp, itask, ncheck);
   if (flag < 0)
   {
     DDHandleErr(DD_ERR_IDA_ERR);
@@ -1640,13 +2226,6 @@ int DDSolveF(DDMem dd_mem,
   /* Update the current time for the current checkpoint and forward solution. */
 
   dd_mem->ck_mem->ck_t1 = ida_mem->ida_tn;
-  dd_mem->dd_tfinal     = ida_mem->ida_tn;
-
-  /* Update the initial time step for this checkpoint here beacuse it is set
-     after the first call to `IDASolveF` and because it will be overwritten when
-     we call `IDAReInit` after a pivot. */
-
-  dd_mem->ck_mem->ck_h0u = ida_mem->ida_h0u;
 
   return flag;
 }
@@ -1687,8 +2266,6 @@ int DDAdjInit(DDMem dd_mem, long Nd, int interpType)
     return SUN_ERR_MEM_FAIL;
   }
 
-  dd_mem->dd_tinitial = ida_mem->ida_tn;
-
   return DD_SUCCESS;
 }
 
@@ -1709,30 +2286,9 @@ static void DDAdjCleanupProblems(DDMem dd_mem)
   dd_mem->dd_probBs = NULL;
 }
 
-static void DDAdjCleanupAndReAttachCheckpoints(DDMem dd_mem)
+static void DDAdjCleanupCheckpoints(DDMem dd_mem)
 {
-  /* Collect IDA checkpoints from DD checkpoints and attach them to the IDA
-     Adjoint memory before calling to make sure that they are all free'ed when
-     calling `IDAAdjFree`. */
-
-  IDAMem ida_mem        = dd_mem->ida_mem;
-  DDckpntMem ck_mem     = dd_mem->ck_mem;
-  IDAadjMem ida_adj_mem = ida_mem->ida_adj_mem;
-
-  if (ida_adj_mem != NULL && ck_mem != NULL)
-  {
-    /* Link IDA checkpoints in each DD checkpoint. */
-
-    for (DDckpntMem ck = ck_mem; ck->ck_next != NULL; ck = ck->ck_next)
-    {
-      IDAckpntMem ida_ck = ck->ida_ck_mem;
-      while (ida_ck->ck_next != NULL) { ida_ck = ida_ck->ck_next; }
-      ida_ck->ck_next = ck->ck_next->ida_ck_mem;
-    }
-
-    /* Attach these IDA checkpoints to the IDA adjoint memory. */
-    ida_adj_mem->ck_mem = ck_mem->ida_ck_mem;
-  }
+  DDckpntMem ck_mem = dd_mem->ck_mem;
 
   while (ck_mem != NULL)
   {
@@ -1750,7 +2306,7 @@ void DDAdjFree(DDMem dd_mem)
   if (dd_mem == NULL) { return; }
 
   DDAdjCleanupProblems(dd_mem);
-  DDAdjCleanupAndReAttachCheckpoints(dd_mem);
+  DDAdjCleanupCheckpoints(dd_mem);
   IDAAdjFree(dd_mem->ida_mem);
 }
 
@@ -1768,7 +2324,7 @@ int DDAdjReInit(DDMem dd_mem)
 
   SUNFunctionBegin(dd_mem->sunctx);
 
-  DDAdjCleanupAndReAttachCheckpoints(dd_mem);
+  DDAdjCleanupCheckpoints(dd_mem);
 
   if (IDAAdjReInit(dd_mem->ida_mem) < 0)
   {
@@ -1857,12 +2413,7 @@ int DDInitB(DDMem dd_mem,
 
   pb.pb_data->db_resB = resB;
 
-  IDAMem ida_mem        = dd_mem->ida_mem;
-  IDAadjMem ida_adj_mem = ida_mem->ida_adj_mem;
-
-  /* Correct the forward solution interval before calling IDAInitB */
-  ida_adj_mem->ia_tinitial = dd_mem->dd_tinitial;
-  ida_adj_mem->ia_tfinal   = dd_mem->dd_tfinal;
+  IDAMem ida_mem = dd_mem->ida_mem;
 
   if (IDAInitB(ida_mem, indexB, DDResBWrapper, tB0, yyB0, ypB0) < 0)
   {
@@ -1885,8 +2436,7 @@ int DDInitB(DDMem dd_mem,
     return SUN_ERR_OP_FAIL;
   }
 
-  dd_mem->ck_mem->ida_ck_mem = ida_adj_mem->ck_mem;
-  dd_mem->ck_mem_cur         = dd_mem->ck_mem;
+  dd_mem->ck_mem_cur = NULL;
 
   return DD_SUCCESS;
 }
@@ -1931,12 +2481,7 @@ int DDReInitB(DDMem dd_mem, int indexB, sunrealtype tB0, N_Vector yyB0, N_Vector
     return SUN_ERR_ARG_CORRUPT;
   }
 
-  IDAMem ida_mem        = dd_mem->ida_mem;
-  IDAadjMem ida_adj_mem = ida_mem->ida_adj_mem;
-
-  /* Correct the forward solution interval before calling IDAReInitB */
-  ida_adj_mem->ia_tinitial = dd_mem->dd_tinitial;
-  ida_adj_mem->ia_tfinal   = dd_mem->dd_tfinal;
+  IDAMem ida_mem = dd_mem->ida_mem;
 
   if (IDAReInitB(ida_mem, indexB, tB0, yyB0, ypB0) < 0)
   {
@@ -1944,20 +2489,7 @@ int DDReInitB(DDMem dd_mem, int indexB, sunrealtype tB0, N_Vector yyB0, N_Vector
     return DD_ERR_IDA_ERR;
   }
 
-  /* If the head DD checkpoint hasn't been closed out yet (e.g. because
-     DDAdjReInit() discarded the checkpoints and a fresh forward pass was
-     driven without any further pivot change), close it out now so that
-     DDSolveB() can find the IDA checkpoints for this segment. If it was
-     already closed out (by DDInitB() or a prior pivot), leave it alone --
-     by this point ida_adj_mem->ck_mem no longer reflects the head segment,
-     since DDSolveB() reassigns it while walking older segments during
-     backward integration. */
-
-  if (dd_mem->ck_mem->ida_ck_mem == NULL)
-  {
-    dd_mem->ck_mem->ida_ck_mem = ida_mem->ida_adj_mem->ck_mem;
-    dd_mem->ck_mem_cur         = dd_mem->ck_mem;
-  }
+  dd_mem->ck_mem_cur = NULL;
 
   return DD_SUCCESS;
 }
@@ -2009,11 +2541,14 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
 
   SUNFunctionBegin(dd_mem->sunctx);
 
+  IDAMem ida_mem        = dd_mem->ida_mem;
+  IDAadjMem ida_adj_mem = ida_mem->ida_adj_mem;
+
   /* Direction of the forward problem. */
 
-  int sign = (dd_mem->dd_tfinal - dd_mem->dd_tinitial > ZERO) ? 1 : -1;
+  int sign = (ida_adj_mem->ia_tfinal - ida_adj_mem->ia_tinitial > ZERO) ? 1 : -1;
 
-  if (sign * (tBout - dd_mem->dd_tinitial) < ZERO)
+  if (sign * (tBout - ida_adj_mem->ia_tinitial) < ZERO)
   {
     DDHandleErr(SUN_ERR_ARG_OUTOFRANGE);
     return SUN_ERR_ARG_OUTOFRANGE;
@@ -2024,9 +2559,6 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
     DDHandleErr(SUN_ERR_ARG_OUTOFRANGE);
     return SUN_ERR_ARG_OUTOFRANGE;
   }
-
-  IDAMem ida_mem        = dd_mem->ida_mem;
-  IDAadjMem ida_adj_mem = ida_mem->ida_adj_mem;
 
   /* Starting from the right-most checkpoint, loop through checkpoints until
      the current time of any of the backwards problems comes after the start
@@ -2073,21 +2605,21 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
     if (ck_mem != dd_mem->ck_mem_cur)
     {
       DDDAEStateCopy(dd_mem->dd_si, ck_mem->ck_state, dd_mem->dd_state);
-
-      /* Set the initial time step for the IDA solver becase it is resetted on
-       each call to `IDASolve` after a call to `IDAReInit`. This field is used
-       by `IDASolveB` when reading the IDA checkpoint at a DD pivot.  */
-
-      ida_mem->ida_h0u = ck_mem->ck_h0u;
-
-      /* Set the IDA checkpoints to the IDA checkpoints associated with this
-         particular DD checkpoint. */
-
-      ida_adj_mem->ck_mem      = ck_mem->ida_ck_mem;
-      ida_adj_mem->ia_tinitial = ck_mem->ck_t0;
-      ida_adj_mem->ia_tfinal   = ck_mem->ck_t1;
-
       dd_mem->ck_mem_cur = ck_mem;
+
+      /* Since a pivot changes the residual structure we must make sure that
+         anything that depends on the Jacobian is re-computed.  */
+
+      if (ida_mem->ida_linit != NULL)
+      {
+        if (ida_mem->ida_linit(ida_mem) != 0)
+        {
+          DDHandleErr(DD_ERR_IDA_ERR);
+          return DD_ERR_IDA_ERR;
+        }
+      }
+
+      ida_mem->ida_forceSetup = SUNTRUE;
     }
 
     if (itaskB == IDA_NORMAL)

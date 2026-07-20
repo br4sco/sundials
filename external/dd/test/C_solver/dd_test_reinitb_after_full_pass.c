@@ -28,8 +28,12 @@
  * Strategy: (A) take one backward step from a fresh terminal condition at T
  * as a baseline. Separately, (B) drive the SAME backward problem down to t0
  * once, then DDReInitB() it back to T with a fresh terminal condition,
- * DDQuadReInitB(), and take one backward step. Compare (A) and (B); they
- * should agree.
+ * DDQuadReInitB(), and take one backward step. Compare (A) and (B); since
+ * both reuse the SAME forward checkpoints (no fresh forward re-run, no
+ * pivot's step/order history disturbed), they must agree BIT FOR BIT.
+ *
+ * Parametrized over interpolation type (argv[1] = 'h' for IDA_HERMITE, 'p'
+ * for IDA_POLYNOMIAL): both must agree BIT FOR BIT regardless.
  * ---------------------------------------------------------------------------*/
 
 #define ZERO SUN_RCONST(0.0)
@@ -37,13 +41,27 @@
 #define TWO  SUN_RCONST(2.0)
 #define FIVE SUN_RCONST(5.0)
 
-int main(void)
+int main(int argc, char* argv[])
 {
+  enum
+  {
+    HERMITE    = 'h',
+    POLYNOMIAL = 'p'
+  } interp_arg;
+
+  TEST_ASSERT(argc > 1);
+  switch (argv[1][0])
+  {
+  case HERMITE: interp_arg = HERMITE; break;
+  case POLYNOMIAL: interp_arg = POLYNOMIAL; break;
+  default: TEST_ASSERT(0);
+  }
+  const int interp = (interp_arg == HERMITE) ? IDA_HERMITE : IDA_POLYNOMIAL;
+
   const sunrealtype t0    = ZERO;
   const sunrealtype tstep = SUN_RCONST(0.1);
   const sunrealtype tout  = SUN_RCONST(5.0);
   const int Nd            = 50;
-  const sunrealtype eps   = SUN_RCONST(1.0e-4);
 
   SUNContext sunctx;
   TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &sunctx) == SUN_SUCCESS);
@@ -90,9 +108,7 @@ int main(void)
   TEST_ASSERT(DDInit(dd_mem, si, PendulumRes, PIVGetSpec(pm), t0, Y) ==
               IDA_SUCCESS);
 
-  /* Matches the reported repro script, which uses IDAInterpType.HERMITE
-   * (unlike dd_test_reinitb_interior.c, which uses IDA_POLYNOMIAL). */
-  TEST_ASSERT(DDAdjInit(dd_mem, Nd, IDA_HERMITE) == IDA_SUCCESS);
+  TEST_ASSERT(DDAdjInit(dd_mem, Nd, interp) == IDA_SUCCESS);
 
   TEST_ASSERT(DDSetUserData(dd_mem, data) == IDA_SUCCESS);
 
@@ -275,7 +291,7 @@ int main(void)
   }
   printf("max |baseline - resumed| (quad)  = %.3e\n", maxerr_q);
 
-  int ok = (maxerr <= eps) && (maxerr_q <= eps);
+  int ok = (maxerr == ZERO) && (maxerr_q == ZERO);
 
   /* Cleanup */
   DDAdjFree(dd_mem);
