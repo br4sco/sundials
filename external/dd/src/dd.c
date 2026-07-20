@@ -156,6 +156,7 @@ struct DDMemRec
   /* Backwards Problem */
 
   sunrealtype dd_tinitial;
+  sunrealtype dd_tfinal;
   DynArr_ProbB dd_probBs;
   DDckpntMem ck_mem;
   DDckpntMem ck_mem_cur;
@@ -549,7 +550,7 @@ static void DDSetId(DDStaticInfo si, DDDAEState state, N_Vector id)
  * DDReInit
  * -------------------------------------------------------------------------- */
 
-int DDReInit(DDMem dd_mem, sunrealtype t0, N_Vector Y0)
+int DDReInit(DDMem dd_mem, uint8_t* spec, sunrealtype t0, N_Vector Y0)
 {
   if (dd_mem == NULL)
   {
@@ -559,7 +560,18 @@ int DDReInit(DDMem dd_mem, sunrealtype t0, N_Vector Y0)
 
   SUNFunctionBegin(dd_mem->sunctx);
 
-  DDSetYpFromY(dd_mem->dd_si, dd_mem->dd_state, Y0, dd_mem->dd_yp);
+  SUNAssert(spec != NULL, SUN_ERR_ARG_CORRUPT);
+  SUNAssert(Y0 != NULL, SUN_ERR_ARG_CORRUPT);
+
+  DDStaticInfo si  = dd_mem->dd_si;
+  DDDAEState state = dd_mem->dd_state;
+
+  memcpy(dd_mem->dd_spec, spec, si->N * sizeof(*dd_mem->dd_spec));
+
+  SUNCheckCall(DDDAEStateUpdate(si, spec, state));
+
+  DDSetYpFromY(si, state, Y0, dd_mem->dd_yp);
+  DDSetId(si, state, dd_mem->dd_id);
 
   if (IDAReInit(dd_mem->ida_mem, t0, Y0, dd_mem->dd_yp) < 0)
   {
@@ -567,9 +579,15 @@ int DDReInit(DDMem dd_mem, sunrealtype t0, N_Vector Y0)
     return DD_ERR_IDA_ERR;
   }
 
+  if (IDASetId(dd_mem->ida_mem, dd_mem->dd_id) < 0)
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
   dd_mem->dd_t0 = t0;
 
-  return DD_SUCCESS;
+  return SUN_SUCCESS;
 }
 
 /* --------------------------------------------------------------------------
@@ -1619,9 +1637,10 @@ int DDSolveF(DDMem dd_mem,
     return DD_ERR_IDA_ERR;
   }
 
-  /* Update the current time for the current checkpoint. */
+  /* Update the current time for the current checkpoint and forward solution. */
 
   dd_mem->ck_mem->ck_t1 = ida_mem->ida_tn;
+  dd_mem->dd_tfinal     = ida_mem->ida_tn;
 
   /* Update the initial time step for this checkpoint here beacuse it is set
      after the first call to `IDASolveF` and because it will be overwritten when
@@ -1815,16 +1834,6 @@ int DDInitB(DDMem dd_mem,
     return SUN_ERR_ARG_CORRUPT;
   }
 
-  IDAMem ida_mem = dd_mem->ida_mem;
-
-  /* We re-init the IDA adjoint problem at each pivot, which changes
-     `ia_tinitial`, so we need to re-set the true value for tinitial (which is
-     the time when we called `DDAdjInit`). */
-
-  IDAadjMem ida_adj_mem = ida_mem->ida_adj_mem;
-
-  ida_adj_mem->ia_tinitial = dd_mem->dd_tinitial;
-
   if (yyB0 == NULL)
   {
     DDHandleErr(SUN_ERR_ARG_CORRUPT);
@@ -1847,6 +1856,13 @@ int DDInitB(DDMem dd_mem,
   }
 
   pb.pb_data->db_resB = resB;
+
+  IDAMem ida_mem        = dd_mem->ida_mem;
+  IDAadjMem ida_adj_mem = ida_mem->ida_adj_mem;
+
+  /* Correct the forward solution interval before calling IDAInitB */
+  ida_adj_mem->ia_tinitial = dd_mem->dd_tinitial;
+  ida_adj_mem->ia_tfinal   = dd_mem->dd_tfinal;
 
   if (IDAInitB(ida_mem, indexB, DDResBWrapper, tB0, yyB0, ypB0) < 0)
   {
@@ -1903,8 +1919,6 @@ int DDReInitB(DDMem dd_mem, int indexB, sunrealtype tB0, N_Vector yyB0, N_Vector
 
   SUNFunctionBegin(dd_mem->sunctx);
 
-  IDAMem ida_mem = dd_mem->ida_mem;
-
   if (yyB0 == NULL)
   {
     DDHandleErr(SUN_ERR_ARG_CORRUPT);
@@ -1917,10 +1931,32 @@ int DDReInitB(DDMem dd_mem, int indexB, sunrealtype tB0, N_Vector yyB0, N_Vector
     return SUN_ERR_ARG_CORRUPT;
   }
 
+  IDAMem ida_mem        = dd_mem->ida_mem;
+  IDAadjMem ida_adj_mem = ida_mem->ida_adj_mem;
+
+  /* Correct the forward solution interval before calling IDAReInitB */
+  ida_adj_mem->ia_tinitial = dd_mem->dd_tinitial;
+  ida_adj_mem->ia_tfinal   = dd_mem->dd_tfinal;
+
   if (IDAReInitB(ida_mem, indexB, tB0, yyB0, ypB0) < 0)
   {
     DDHandleErr(DD_ERR_IDA_ERR);
     return DD_ERR_IDA_ERR;
+  }
+
+  /* If the head DD checkpoint hasn't been closed out yet (e.g. because
+     DDAdjReInit() discarded the checkpoints and a fresh forward pass was
+     driven without any further pivot change), close it out now so that
+     DDSolveB() can find the IDA checkpoints for this segment. If it was
+     already closed out (by DDInitB() or a prior pivot), leave it alone --
+     by this point ida_adj_mem->ck_mem no longer reflects the head segment,
+     since DDSolveB() reassigns it while walking older segments during
+     backward integration. */
+
+  if (dd_mem->ck_mem->ida_ck_mem == NULL)
+  {
+    dd_mem->ck_mem->ida_ck_mem = ida_mem->ida_adj_mem->ck_mem;
+    dd_mem->ck_mem_cur         = dd_mem->ck_mem;
   }
 
   return DD_SUCCESS;
@@ -1973,12 +2009,9 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
 
   SUNFunctionBegin(dd_mem->sunctx);
 
-  IDAMem ida_mem        = dd_mem->ida_mem;
-  IDAadjMem ida_adj_mem = ida_mem->ida_adj_mem;
-
   /* Direction of the forward problem. */
 
-  int sign = (ida_adj_mem->ia_tfinal - dd_mem->dd_tinitial > ZERO) ? 1 : -1;
+  int sign = (dd_mem->dd_tfinal - dd_mem->dd_tinitial > ZERO) ? 1 : -1;
 
   if (sign * (tBout - dd_mem->dd_tinitial) < ZERO)
   {
@@ -1991,6 +2024,9 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
     DDHandleErr(SUN_ERR_ARG_OUTOFRANGE);
     return SUN_ERR_ARG_OUTOFRANGE;
   }
+
+  IDAMem ida_mem        = dd_mem->ida_mem;
+  IDAadjMem ida_adj_mem = ida_mem->ida_adj_mem;
 
   /* Starting from the right-most checkpoint, loop through checkpoints until
      the current time of any of the backwards problems comes after the start
@@ -2047,7 +2083,9 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
       /* Set the IDA checkpoints to the IDA checkpoints associated with this
          particular DD checkpoint. */
 
-      ida_adj_mem->ck_mem = ck_mem->ida_ck_mem;
+      ida_adj_mem->ck_mem      = ck_mem->ida_ck_mem;
+      ida_adj_mem->ia_tinitial = ck_mem->ck_t0;
+      ida_adj_mem->ia_tfinal   = ck_mem->ck_t1;
 
       dd_mem->ck_mem_cur = ck_mem;
     }

@@ -508,13 +508,15 @@ int DDInit(DDMem dd_mem,
  * @brief Re-initializes a solver session with new initial conditions.
  *
  * @param[in] dd_mem  Solver object.
+ * @param[in] spec    Initial dummy derivative specification (array of length N);
+ *                    see DDSetSpec() for the encoding.
  * @param[in] t0      New initial value of the independent variable.
  * @param[in] Y0      New initial augmented state vector (length N_all_orders).
  *
  * @return IDA_SUCCESS or an IDA error code.
  * @see IDAReInit
  */
-int DDReInit(DDMem dd_mem, sunrealtype t0, N_Vector Y0);
+int DDReInit(DDMem dd_mem, uint8_t* spec, sunrealtype t0, N_Vector Y0);
 
 /**
  * @brief Integrates the DAE to a requested output time.

@@ -25,6 +25,16 @@
  * the first pass. Both passes start from the same tret with the same
  * consistent terminal condition, so they must agree exactly (within
  * tolerance).
+ *
+ * Additionally verifies a THIRD pass that exercises DDAdjReInit(): the
+ * forward problem is reset to t0 via DDReInit(), the checkpoints are
+ * discarded and re-primed via DDAdjReInit(), and a fresh forward solve is
+ * driven from t0 to T to regenerate checkpoints from scratch. The backward
+ * problem is then reinitialized with DDReInitB() using the terminal
+ * condition from this new forward solve and driven back down to t0. Since
+ * the forward trajectory and terminal condition are numerically identical to
+ * the first pass, the result must again agree with the first pass (within
+ * tolerance).
  * ---------------------------------------------------------------------------*/
 
 #define ZERO SUN_RCONST(0.0)
@@ -252,7 +262,105 @@ int main(void)
   }
   printf("max |pass1 - pass2| (quad)  = %.3e\n", maxerr_q);
 
-  int ok = (maxerr <= eps) && (maxerr_q <= eps);
+  /* ------------------------------------------------------------------------
+   * Third pass: exercise DDAdjReInit(). Reset the forward problem to t0,
+   * discard and re-prime the checkpoints, then drive a fresh forward
+   * solution from t0 to T (regenerating checkpoints), and finally reinit and
+   * re-drive the backward problem down to t0 using those new checkpoints.
+   * ------------------------------------------------------------------------ */
+
+  PendulumY0(data, theta0, Y);
+  TEST_ASSERT(PIVPivot(pm, ZERO, t0, Y, &spec_changed) == SUN_SUCCESS);
+  TEST_ASSERT(DDReInit(dd_mem, PIVGetSpec(pm), t0, Y) == IDA_SUCCESS);
+  TEST_ASSERT(DDAdjReInit(dd_mem) == IDA_SUCCESS);
+
+  sunrealtype t3    = t0;
+  sunrealtype tret3 = ZERO;
+  int ncheck3       = 0;
+
+  while (SUNTRUE)
+  {
+    TEST_ASSERT(PIVPivot(pm, ZERO, t3, Y, &spec_changed) == SUN_SUCCESS);
+    if (spec_changed)
+    {
+      TEST_ASSERT(DDSetSpec(dd_mem, PIVGetSpec(pm)) == SUN_SUCCESS);
+    }
+
+    t3 += tstep;
+    if (t3 >= tout) { break; }
+
+    TEST_ASSERT(DDSolveF(dd_mem, t3, &tret3, Y, IDA_NORMAL, &ncheck3) ==
+                IDA_SUCCESS);
+  }
+
+  printf("Third pass forward integration done: tret=%.4f, ncheck=%d\n", tret3,
+         ncheck3);
+
+  N_Vector yyBT3 = N_VClone(yyBT);
+  N_Vector ypBT3 = N_VClone(yyBT);
+  PendulumYyBT(data, Y, yyBT3, ypBT3);
+
+  TEST_ASSERT(DDReInitB(dd_mem, indexB, tret3, yyBT3, ypBT3) == IDA_SUCCESS);
+
+  N_Vector qB3 = N_VClone(qB);
+  N_VConst(ZERO, qB3);
+  TEST_ASSERT(DDQuadReInitB(dd_mem, indexB, qB3) == IDA_SUCCESS);
+
+  N_Vector yyB3 = N_VClone(yyBT);
+  N_Vector ypB3 = N_VClone(yyBT);
+  N_VScale(ONE, yyBT3, yyB3);
+  N_VScale(ONE, ypBT3, ypB3);
+
+  sunrealtype tB3 = tret3;
+  while (tB3 > t0)
+  {
+    sunrealtype tnext = tB3 - tstep;
+    if (tnext < t0) { tnext = t0; }
+    flag = DDSolveB(dd_mem, tnext, IDA_NORMAL);
+    TEST_ASSERT(flag >= 0);
+    tB3 = tnext;
+    TEST_ASSERT(DDGetB(dd_mem, indexB, &tB3, yyB3, ypB3) == IDA_SUCCESS);
+    TEST_ASSERT(DDGetQuadB(dd_mem, indexB, &tB3, qB3) == IDA_SUCCESS);
+  }
+
+  printf("Third backward pass reached t=%.6f\n", tB3);
+
+  /* ------------------------------------------------------------------------
+   * Compare pass 1 (yyB/qB, already at t0) vs. pass 3 (yyB3/qB3, also at t0)
+   * ------------------------------------------------------------------------ */
+
+  sunrealtype* r3_arr = N_VGetArrayPointer(yyB3);
+
+  sunrealtype maxerr3 = ZERO;
+  for (int i = 0; i < PENDULUM_ADJ_N; ++i)
+  {
+    sunrealtype err = SUNRabs(d_arr[i] - r3_arr[i]);
+    printf("  lambda[%d]: pass1=% .12f  pass3=% .12f  |diff|=%.3e\n",
+           i,
+           d_arr[i],
+           r3_arr[i],
+           err);
+    if (err > maxerr3) { maxerr3 = err; }
+  }
+  printf("max |pass1 - pass3| (state) = %.3e\n", maxerr3);
+
+  sunrealtype* qr3_arr = N_VGetArrayPointer(qB3);
+
+  sunrealtype maxerr_q3 = ZERO;
+  for (int i = 0; i < PENDULUM_NP + 1; ++i)
+  {
+    sunrealtype err = SUNRabs(qd_arr[i] - qr3_arr[i]);
+    printf("  qB[%d]: pass1=% .12f  pass3=% .12f  |diff|=%.3e\n",
+           i,
+           qd_arr[i],
+           qr3_arr[i],
+           err);
+    if (err > maxerr_q3) { maxerr_q3 = err; }
+  }
+  printf("max |pass1 - pass3| (quad)  = %.3e\n", maxerr_q3);
+
+  int ok = (maxerr <= eps) && (maxerr_q <= eps) && (maxerr3 <= eps) &&
+           (maxerr_q3 <= eps);
 
   /* Cleanup */
   DDAdjFree(dd_mem);
@@ -270,6 +378,11 @@ int main(void)
   N_VDestroy(ypB2);
   N_VDestroy(qB);
   N_VDestroy(qB2);
+  N_VDestroy(yyBT3);
+  N_VDestroy(ypBT3);
+  N_VDestroy(yyB3);
+  N_VDestroy(ypB3);
+  N_VDestroy(qB3);
   DDStaticInfoDestroy(si);
   SUNContext_Free(&sunctx);
   SUNLinSolFree(LS);
