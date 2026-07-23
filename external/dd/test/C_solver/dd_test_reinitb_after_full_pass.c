@@ -6,7 +6,9 @@
 #include <sundials/sundials_matrix.h>
 #include <sundials/sundials_nvector.h>
 #include <sunlinsol/sunlinsol_dense.h>
+#include <sunlinsol/sunlinsol_klu.h>
 #include <sunmatrix/sunmatrix_dense.h>
+#include <sunmatrix/sunmatrix_sparse.h>
 
 #include "dd.h"
 #include "dd_math.h"
@@ -33,7 +35,10 @@
  * pivot's step/order history disturbed), they must agree BIT FOR BIT.
  *
  * Parametrized over interpolation type (argv[1] = 'h' for IDA_HERMITE, 'p'
- * for IDA_POLYNOMIAL): both must agree BIT FOR BIT regardless.
+ * for IDA_POLYNOMIAL) and over the forward problem's Jacobian callback
+ * (argv[2] = 'n' no callback/DQ, 'd' dense, 'r' CSR, 'c' CSC, matching
+ * model_pendulum.c's mat_type convention): all combinations must agree BIT
+ * FOR BIT.
  * ---------------------------------------------------------------------------*/
 
 #define ZERO SUN_RCONST(0.0)
@@ -49,7 +54,15 @@ int main(int argc, char* argv[])
     POLYNOMIAL = 'p'
   } interp_arg;
 
-  TEST_ASSERT(argc > 1);
+  enum
+  {
+    NONE  = 'n',
+    DENSE = 'd',
+    CSR   = 'r',
+    CSC   = 'c'
+  } mat_type;
+
+  TEST_ASSERT(argc > 2);
   switch (argv[1][0])
   {
   case HERMITE: interp_arg = HERMITE; break;
@@ -57,6 +70,15 @@ int main(int argc, char* argv[])
   default: TEST_ASSERT(0);
   }
   const int interp = (interp_arg == HERMITE) ? IDA_HERMITE : IDA_POLYNOMIAL;
+
+  switch (argv[2][0])
+  {
+  case NONE: mat_type = NONE; break;
+  case DENSE: mat_type = DENSE; break;
+  case CSR: mat_type = CSR; break;
+  case CSC: mat_type = CSC; break;
+  default: TEST_ASSERT(0);
+  }
 
   const sunrealtype t0    = ZERO;
   const sunrealtype tstep = SUN_RCONST(0.1);
@@ -115,12 +137,56 @@ int main(int argc, char* argv[])
   TEST_ASSERT(DDSSTolerances(dd_mem, SUN_RCONST(1.0e-9), SUN_RCONST(1.0e-9)) ==
               IDA_SUCCESS);
 
-  SUNMatrix J = SUNDenseMatrix(si->N_all_orders, si->N_all_orders, sunctx);
-  TEST_ASSERT(J);
-  SUNLinearSolver LS = SUNLinSol_Dense(Y, J, sunctx);
-  TEST_ASSERT(LS);
+  const sunindextype N = si->N_all_orders;
+  SUNMatrix J          = NULL;
+  SUNLinearSolver LS   = NULL;
+
+  switch (mat_type)
+  {
+  case NONE:
+  case DENSE:
+    J = SUNDenseMatrix(N, N, sunctx);
+    TEST_ASSERT(J);
+    LS = SUNLinSol_Dense(Y, J, sunctx);
+    TEST_ASSERT(LS);
+    break;
+  case CSR:
+  case CSC:
+    J = SUNSparseMatrix(N,
+                        N,
+                        PENDULUM_JAC_NNZ + 0 + 4,
+                        mat_type == CSR ? CSR_MAT : CSC_MAT,
+                        sunctx);
+    TEST_ASSERT(J);
+    LS = SUNLinSol_KLU(Y, J, sunctx);
+    TEST_ASSERT(LS);
+    break;
+  }
 
   TEST_ASSERT(DDSetLinearSolver(dd_mem, LS, J) == IDA_SUCCESS);
+
+  switch (mat_type)
+  {
+  case NONE: break;
+  case DENSE:
+    TEST_ASSERT(
+      DDSetJacFn(dd_mem,
+                 (DDLsJacFn){.id = DD_JAC_1, .fn.jacfn1 = PendulumJacfn_Dense}) ==
+      IDA_SUCCESS);
+    break;
+  case CSR:
+    TEST_ASSERT(
+      DDSetJacFn(dd_mem,
+                 (DDLsJacFn){.id = DD_JAC_1, .fn.jacfn1 = PendulumJacfn_CSR}) ==
+      IDA_SUCCESS);
+    break;
+  case CSC:
+    TEST_ASSERT(
+      DDSetJacFn(dd_mem,
+                 (DDLsJacFn){.id = DD_JAC_2, .fn.jacfn2 = PendulumJacfn_CSC}) ==
+      IDA_SUCCESS);
+    break;
+  }
 
   /* ------------------------------------------------------------------------
    * Integrate Forward
