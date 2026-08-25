@@ -60,10 +60,10 @@ typedef struct
   PIVMatrixWorkspace* wss;      /**< Workspace for each stage */
   sunindextype* vars_k_flat;    /**< `vars_k` as a flat array */
   sunbooleantype* known_k_flat; /**< `known_k` as a flat array */
-} _PivMem;
+} _PIVMem;
 
 /** @brief Holds pivoting state */
-typedef _PivMem* PivMem;
+typedef _PIVMem* PIVMem;
 
 /**
  * @brief Creates pivot memory from static DAE info.
@@ -76,19 +76,19 @@ typedef _PivMem* PivMem;
  *
  * @return A newly allocated @ref PivMem, or NULL on failure.
  */
-PivMem PIVCreate(SUNContext sunctx,
+PIVMem PIVCreate(SUNContext sunctx,
                  DDStaticInfo si,
                  PIVMatrix J_0,
                  PIVJacFn0* jacfn0);
 
 /** @brief Sets user data for the Jacobian callback **/
-SUNErrCode PIVSetUserData(PivMem, void*);
+SUNErrCode PIVSetUserData(PIVMem, void*);
 
 /** @brief Destroys pivot data. */
-void PIVDestroy(PivMem*);
+void PIVDestroy(PIVMem*);
 
 /** @brief Print pvito data. */
-void PIVPrint(PivMem, FILE*);
+void PIVPrint(PIVMem, FILE*);
 
 /* /\** @brief Prints sub-matrix at the the given stage *\/ */
 /* void PSPrintSubmat(const Structure[static 1], const PivMem[static 1], uint8_t, */
@@ -121,13 +121,10 @@ void PIVPrint(PivMem, FILE*);
  *
  * @return SUN_SUCCESS, or a SUNDIALS error code on failure.
  */
-SUNErrCode PIVPivot(PivMem pm,
+SUNErrCode PIVPivot(PIVMem pm,
                     sunrealtype tol,
                     sunrealtype t,
                     N_Vector Y,
                     sunbooleantype* spec_changed);
-
-/** @brief Returns the current dummy derivative spec of this pivot memory */
-uint8_t* PIVGetSpec(PivMem);
 
 #endif

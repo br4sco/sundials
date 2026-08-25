@@ -27,8 +27,6 @@
  */
 typedef struct
 {
-  SUNContext sunctx; /**< SUNDIALS context */
-
   sunindextype N; /**< Number of original (zero'th-order) equations and variables */
 
   /** Total equations in the augmented system: Σᵢ (cᵢ + 1) */
@@ -111,7 +109,6 @@ typedef DDstaticInfoRec* DDStaticInfo;
 /**
  * @brief Creates static DAE info from the canonical structural offsets.
  *
- * @param[in] sunctx      SUNDIALS context.
  * @param[in] N           Number of equations and variables in the original DAE.
  * @param[in] eqnofs      Canonical equation offsets c ∈ ℕ₀ⁿ (length N).
  * @param[in] varofs      Canonical variable offsets d ∈ ℕ₀ⁿ (length N).
@@ -124,8 +121,7 @@ typedef DDstaticInfoRec* DDStaticInfo;
  *
  * @return A newly allocated @ref DDStaticInfo, or NULL on failure.
  */
-DDStaticInfo DDStaticInfoCreate(SUNContext sunctx,
-                                sunindextype N,
+DDStaticInfo DDStaticInfoCreate(sunindextype N,
                                 const uint8_t eqnofs[static N],
                                 const uint8_t varofs[static N],
                                 const sunindextype* var_deriv_chains[static N],

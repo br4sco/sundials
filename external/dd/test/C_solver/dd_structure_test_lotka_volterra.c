@@ -12,8 +12,7 @@ int main(void)
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
   sunindextype i, j, k;
-  DDStaticInfo si = DDStaticInfoCreate(CTX,
-                                       LOTKA_VOLTERRA_N,
+  DDStaticInfo si = DDStaticInfoCreate(LOTKA_VOLTERRA_N,
                                        LOTKA_VOLTERRA_C,
                                        LOTKA_VOLTERRA_D,
                                        LOTKA_VOLTERRA_VAR_IDX_MAP,

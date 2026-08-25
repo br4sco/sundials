@@ -69,8 +69,7 @@ void DDStaticInfoDestroy(DDStaticInfo si)
   }
 }
 
-DDStaticInfo DDStaticInfoCreate(SUNContext sunctx,
-                                sunindextype N,
+DDStaticInfo DDStaticInfoCreate(sunindextype N,
                                 const uint8_t eqnofs[static N],
                                 const uint8_t varofs[static N],
                                 const sunindextype* var_deriv_chains[static N],
@@ -80,8 +79,7 @@ DDStaticInfo DDStaticInfoCreate(SUNContext sunctx,
   DDStaticInfo si = malloc(sizeof(*si));
   if (si == NULL) { return NULL; }
 
-  si->sunctx = sunctx;
-  si->N      = N;
+  si->N = N;
 
   uint8_t K = 0;
   for (sunindextype i = 0; i < N; ++i)

@@ -58,12 +58,12 @@ static void DDckpntDestroy(DDckpntMem* ck_mem_ptr)
   *ck_mem_ptr = NULL;
 }
 
-static DDckpntMem DDckpntCreate(DDStaticInfo si, sunrealtype t, DDDAEState state)
+static DDckpntMem DDckpntCreate(sunrealtype t, DDDAEState state)
 {
   DDckpntMem ck_mem = calloc(1, sizeof(*ck_mem));
   if (ck_mem == NULL) { return NULL; }
 
-  ck_mem->ck_state = DDDAEStateClone(si, state);
+  ck_mem->ck_state = DDDAEStateClone(state);
   if (ck_mem->ck_state == NULL)
   {
     DDckpntDestroy(&ck_mem);
@@ -448,7 +448,7 @@ struct DDMemRec
  * Private Function Prototypes
  * -------------------------------------------------------------------------- */
 
-static int DDResWrapper(sunrealtype, N_Vector, N_Vector, N_Vector, void*);
+static int DDResFnWrapper(sunrealtype, N_Vector, N_Vector, N_Vector, void*);
 
 static void DDSetYpFromY(DDStaticInfo, DDDAEState, N_Vector, N_Vector);
 static void DDSetId(DDStaticInfo, DDDAEState, N_Vector);
@@ -486,18 +486,18 @@ static int DDLsJacFnWrapper2(sunrealtype,
                              N_Vector,
                              N_Vector);
 
-static int DDResSWrapper(int Ns,
-                         sunrealtype,
-                         N_Vector,
-                         N_Vector,
-                         N_Vector,
-                         N_Vector[static Ns],
-                         N_Vector[static Ns],
-                         N_Vector[static Ns],
-                         void*,
-                         N_Vector,
-                         N_Vector,
-                         N_Vector);
+static int DDResFnSWrapper(int Ns,
+                           sunrealtype,
+                           N_Vector,
+                           N_Vector,
+                           N_Vector,
+                           N_Vector[static Ns],
+                           N_Vector[static Ns],
+                           N_Vector[static Ns],
+                           void*,
+                           N_Vector,
+                           N_Vector,
+                           N_Vector);
 
 static void DDSensCleanup(DDMem dd_mem);
 
@@ -505,13 +505,13 @@ static int DDQuadRhsFnWrapper(sunrealtype, N_Vector, N_Vector, N_Vector, void*);
 
 static void DDAdjCleanupCheckpoints(DDMem dd_mem);
 
-static int DDResBWrapper(sunrealtype,
-                         N_Vector,
-                         N_Vector,
-                         N_Vector,
-                         N_Vector,
-                         N_Vector,
-                         void*);
+static int DDResFnBWrapper(sunrealtype,
+                           N_Vector,
+                           N_Vector,
+                           N_Vector,
+                           N_Vector,
+                           N_Vector,
+                           void*);
 
 static int DDLsJacFnBWrapper(sunrealtype,
                              sunrealtype,
@@ -723,7 +723,7 @@ int DDInit(DDMem dd_mem,
   }
   memcpy(dd_mem->dd_spec, spec, si->N * sizeof(*dd_mem->dd_spec));
 
-  DDDAEState state = DDDAEStateCreate(si);
+  DDDAEState state = DDDAEStateCreate(sunctx, si);
   if (state == NULL)
   {
     DDHandleErr(SUN_ERR_MEM_FAIL);
@@ -731,7 +731,7 @@ int DDInit(DDMem dd_mem,
   }
   dd_mem->dd_state = state;
 
-  if (DDDAEStateUpdate(si, spec, state) < 0)
+  if (DDDAEStateUpdate(state, spec) < 0)
   {
     DDHandleErr(SUN_ERR_OP_FAIL);
     return SUN_ERR_OP_FAIL;
@@ -756,7 +756,7 @@ int DDInit(DDMem dd_mem,
   }
   DDSetId(si, state, dd_mem->dd_id);
 
-  if (IDAInit(dd_mem->ida_mem, DDResWrapper, t0, Y0, dd_mem->dd_yp) < 0)
+  if (IDAInit(dd_mem->ida_mem, DDResFnWrapper, t0, Y0, dd_mem->dd_yp) < 0)
   {
     DDHandleErr(DD_ERR_IDA_ERR);
     return DD_ERR_IDA_ERR;
@@ -772,11 +772,11 @@ int DDInit(DDMem dd_mem,
   return DD_SUCCESS;
 }
 
-static int DDResWrapper(sunrealtype t,
-                        N_Vector yy,
-                        N_Vector yp,
-                        N_Vector rr,
-                        void* user_data)
+static int DDResFnWrapper(sunrealtype t,
+                          N_Vector yy,
+                          N_Vector yp,
+                          N_Vector rr,
+                          void* user_data)
 {
   const DDMem dd_mem     = (DDMem)user_data;
   const DDStaticInfo si  = dd_mem->dd_si;
@@ -850,7 +850,7 @@ int DDReInit(DDMem dd_mem, uint8_t* spec, sunrealtype t0, N_Vector Y0)
 
   memcpy(dd_mem->dd_spec, spec, si->N * sizeof(*dd_mem->dd_spec));
 
-  SUNCheckCall(DDDAEStateUpdate(si, spec, state));
+  SUNCheckCall(DDDAEStateUpdate(state, spec));
 
   DDSetYpFromY(si, state, Y0, dd_mem->dd_yp);
   DDSetId(si, state, dd_mem->dd_id);
@@ -930,7 +930,7 @@ int DDSetSpec(DDMem dd_mem, uint8_t* spec)
 
   DDDAEState state = dd_mem->dd_state;
 
-  if (DDDAEStateUpdate(si, spec, state) < 0)
+  if (DDDAEStateUpdate(state, spec) < 0)
   {
     DDHandleErr(SUN_ERR_OP_FAIL);
     return SUN_ERR_OP_FAIL;
@@ -973,7 +973,7 @@ int DDSetSpec(DDMem dd_mem, uint8_t* spec)
          DDSetSpec is being called again before any DDSolveF. Update the
          current DD checkpoint's state in-place rather than prepending a new
          empty checkpoint. */
-      if (DDDAEStateUpdate(si, spec, dd_mem->ck_mem->ck_state) < 0)
+      if (DDDAEStateUpdate(dd_mem->ck_mem->ck_state, spec) < 0)
       {
         DDHandleErr(SUN_ERR_OP_FAIL);
         return SUN_ERR_OP_FAIL;
@@ -987,7 +987,7 @@ int DDSetSpec(DDMem dd_mem, uint8_t* spec)
       DDckpntMem ck_next = dd_mem->ck_mem;
       ck_next->ck_t1     = tn;
 
-      DDckpntMem ck_mem = DDckpntCreate(si, tn, state);
+      DDckpntMem ck_mem = DDckpntCreate(tn, state);
       if (ck_mem == NULL)
       {
         DDHandleErr(SUN_ERR_MEM_FAIL);
@@ -1527,7 +1527,7 @@ int DDSensInit(DDMem dd_mem,
     DDSetYpFromY(dd_mem->dd_si, dd_mem->dd_state, YS0[i], ypS[i]);
   }
 
-  if (IDASensInit(dd_mem->ida_mem, Ns, ism, resfnS ? DDResSWrapper : NULL, YS0, ypS) <
+  if (IDASensInit(dd_mem->ida_mem, Ns, ism, resfnS ? DDResFnSWrapper : NULL, YS0, ypS) <
       0)
   {
     DDHandleErr(DD_ERR_IDA_ERR);
@@ -1539,18 +1539,18 @@ int DDSensInit(DDMem dd_mem,
   return DD_SUCCESS;
 }
 
-static int DDResSWrapper(int Ns,
-                         sunrealtype t,
-                         N_Vector yy,
-                         SUNDIALS_MAYBE_UNUSED N_Vector yp,
-                         N_Vector rr,
-                         N_Vector yyS[static Ns],
-                         N_Vector ypS[static Ns],
-                         N_Vector rrS[static Ns],
-                         void* user_data,
-                         N_Vector tmp1,
-                         N_Vector tmp2,
-                         N_Vector tmp3)
+static int DDResFnSWrapper(int Ns,
+                           sunrealtype t,
+                           N_Vector yy,
+                           SUNDIALS_MAYBE_UNUSED N_Vector yp,
+                           N_Vector rr,
+                           N_Vector yyS[static Ns],
+                           N_Vector ypS[static Ns],
+                           N_Vector rrS[static Ns],
+                           void* user_data,
+                           N_Vector tmp1,
+                           N_Vector tmp2,
+                           N_Vector tmp3)
 {
   const DDMem dd_mem     = (DDMem)user_data;
   const DDStaticInfo si  = dd_mem->dd_si;
@@ -2259,7 +2259,7 @@ int DDAdjInit(DDMem dd_mem, long Nd, int interpType)
     return SUN_ERR_MEM_FAIL;
   }
 
-  dd_mem->ck_mem = DDckpntCreate(dd_mem->dd_si, dd_mem->dd_t0, dd_mem->dd_state);
+  dd_mem->ck_mem = DDckpntCreate(dd_mem->dd_t0, dd_mem->dd_state);
   if (dd_mem->ck_mem == NULL)
   {
     DDHandleErr(SUN_ERR_MEM_FAIL);
@@ -2332,7 +2332,7 @@ int DDAdjReInit(DDMem dd_mem)
     return DD_ERR_IDA_ERR;
   }
 
-  dd_mem->ck_mem = DDckpntCreate(dd_mem->dd_si, dd_mem->dd_t0, dd_mem->dd_state);
+  dd_mem->ck_mem = DDckpntCreate(dd_mem->dd_t0, dd_mem->dd_state);
   SUNAssert(dd_mem->ck_mem != NULL, SUN_ERR_MEM_FAIL);
 
   return SUN_SUCCESS;
@@ -2415,7 +2415,7 @@ int DDInitB(DDMem dd_mem,
 
   IDAMem ida_mem = dd_mem->ida_mem;
 
-  if (IDAInitB(ida_mem, indexB, DDResBWrapper, tB0, yyB0, ypB0) < 0)
+  if (IDAInitB(ida_mem, indexB, DDResFnBWrapper, tB0, yyB0, ypB0) < 0)
   {
     ProbBDestroy(pb);
     DDHandleErr(DD_ERR_IDA_ERR);
@@ -2441,13 +2441,13 @@ int DDInitB(DDMem dd_mem,
   return DD_SUCCESS;
 }
 
-static int DDResBWrapper(sunrealtype t,
-                         N_Vector yy,
-                         SUNDIALS_MAYBE_UNUSED N_Vector yp,
-                         N_Vector yyB,
-                         N_Vector ypB,
-                         N_Vector rrB,
-                         void* user_dataB)
+static int DDResFnBWrapper(sunrealtype t,
+                           N_Vector yy,
+                           SUNDIALS_MAYBE_UNUSED N_Vector yp,
+                           N_Vector yyB,
+                           N_Vector ypB,
+                           N_Vector rrB,
+                           void* user_dataB)
 {
   DataB* data = (DataB*)user_dataB;
 
@@ -2604,7 +2604,7 @@ int DDSolveB(DDMem dd_mem, sunrealtype tBout, int itaskB)
 
     if (ck_mem != dd_mem->ck_mem_cur)
     {
-      DDDAEStateCopy(dd_mem->dd_si, ck_mem->ck_state, dd_mem->dd_state);
+      DDDAEStateCopy(ck_mem->ck_state, dd_mem->dd_state);
       dd_mem->ck_mem_cur = ck_mem;
 
       /* Since a pivot changes the residual structure we must make sure that

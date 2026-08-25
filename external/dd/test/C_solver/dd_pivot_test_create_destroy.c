@@ -13,8 +13,7 @@ int main(void)
 {
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
-  DDStaticInfo si = DDStaticInfoCreate(CTX,
-                                       PENDULUM_N,
+  DDStaticInfo si = DDStaticInfoCreate(PENDULUM_N,
                                        PENDULUM_C,
                                        PENDULUM_D,
                                        PENDULUM_VAR_IDX_MAP,
@@ -27,7 +26,7 @@ int main(void)
   PIVMatrix pJ0 = PIVMatWrapDense(J0);
   TEST_ASSERT(pJ0 != NULL);
 
-  PivMem pm = PIVCreate(CTX, si, pJ0, PendulumJacf0);
+  PIVMem pm = PIVCreate(CTX, si, pJ0, PendulumJacf0);
   TEST_ASSERT(pm != NULL);
   PIVDestroy(&pm);
   pm = NULL;

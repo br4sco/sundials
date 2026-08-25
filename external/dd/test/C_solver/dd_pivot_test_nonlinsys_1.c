@@ -13,8 +13,7 @@ int main(void)
 {
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
-  DDStaticInfo si = DDStaticInfoCreate(CTX,
-                                       NONLINSYS_N,
+  DDStaticInfo si = DDStaticInfoCreate(NONLINSYS_N,
                                        NONLINSYS_C,
                                        NONLINSYS_D,
                                        NONLINSYS_VAR_IDX_MAP,
@@ -26,7 +25,7 @@ int main(void)
   TEST_ASSERT(J0 != NULL);
   PIVMatrix pJ0 = PIVMatWrapDense(J0);
   TEST_ASSERT(pJ0 != NULL);
-  PivMem pm = PIVCreate(CTX, si, pJ0, NonlinsysJacf0);
+  PIVMem pm = PIVCreate(CTX, si, pJ0, NonlinsysJacf0);
   TEST_ASSERT(pm != NULL);
 
   N_Vector Y = N_VNew_Serial(si->N_all_orders, CTX);
@@ -80,7 +79,7 @@ int main(void)
   TEST_ASSERT(known[3]);
   TEST_ASSERT(known[4]);
 
-  uint8_t* spec = PIVGetSpec(pm);
+  uint8_t* spec = pm->spec;
   TEST_ASSERT(spec[0] == 3);
   TEST_ASSERT(spec[1] == 1);
   TEST_ASSERT(spec[2] == 0);

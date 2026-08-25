@@ -19,10 +19,13 @@ void DDDAEStateDestroy(DDDAEState* state_ptr)
   *state_ptr = NULL;
 }
 
-DDDAEState DDDAEStateCreate(DDStaticInfo si)
+DDDAEState DDDAEStateCreate(SUNContext sunctx, DDStaticInfo si)
 {
   DDDAEState state = calloc(1, sizeof(*state));
   if (state == NULL) { return NULL; }
+
+  state->sunctx = sunctx;
+  state->si     = si;
 
   state->diff_var_aliases = malloc(si->N_diff * sizeof(*state->diff_var_aliases));
   if (state->diff_var_aliases == NULL) { goto fail; }
@@ -42,19 +45,23 @@ fail:
   return NULL;
 }
 
-DDDAEState DDDAEStateClone(DDStaticInfo si, DDDAEState state)
+DDDAEState DDDAEStateClone(DDDAEState state)
 {
-  DDDAEState new_state = DDDAEStateCreate(si);
+  DDDAEState new_state = DDDAEStateCreate(state->sunctx, state->si);
   if (new_state == NULL) { return NULL; }
 
-  DDDAEStateCopy(si, state, new_state);
+  DDDAEStateCopy(state, new_state);
 
   return new_state;
 }
 
-void DDDAEStateCopy(DDStaticInfo si, DDDAEState src, DDDAEState dst)
+void DDDAEStateCopy(DDDAEState src, DDDAEState dst)
 {
-  SUNFunctionBegin(si->sunctx);
+  SUNFunctionBegin(src->sunctx);
+
+  SUNAssertVoid(src->si == dst->si, SUN_ERR_ARG_INCOMPATIBLE);
+
+  DDStaticInfo si = src->si;
 
   memcpy(dst->diff_var_aliases,
          src->diff_var_aliases,
@@ -69,10 +76,12 @@ void DDDAEStateCopy(DDStaticInfo si, DDDAEState src, DDDAEState dst)
          si->N_all_orders * sizeof(*src->yp_diff_alias_row));
 }
 
-SUNErrCode DDDAEStateUpdate(DDStaticInfo si, uint8_t* spec, DDDAEState state)
+SUNErrCode DDDAEStateUpdate(DDDAEState state, uint8_t* spec)
 
 {
-  SUNFunctionBegin(si->sunctx);
+  SUNFunctionBegin(state->sunctx);
+
+  DDStaticInfo si = state->si;
 
   memset(state->yy_diff_alias_row,
          -1,

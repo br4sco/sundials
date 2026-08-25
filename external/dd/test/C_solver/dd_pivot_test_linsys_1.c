@@ -14,20 +14,15 @@ int main(void)
 {
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
-  DDStaticInfo si = DDStaticInfoCreate(CTX,
-                                       LINSYS_N,
-                                       LINSYS_C,
-                                       LINSYS_D,
-                                       LINSYS_VAR_IDX_MAP,
-                                       NULL,
-                                       NULL);
+  DDStaticInfo si =
+    DDStaticInfoCreate(LINSYS_N, LINSYS_C, LINSYS_D, LINSYS_VAR_IDX_MAP, NULL, NULL);
 
   TEST_ASSERT(si != NULL);
   SUNMatrix J0 = SUNDenseMatrix(LINSYS_N, LINSYS_N, CTX);
   TEST_ASSERT(J0 != NULL);
   PIVMatrix pJ0 = PIVMatWrapDense(J0);
   TEST_ASSERT(pJ0 != NULL);
-  PivMem pm = PIVCreate(CTX, si, pJ0, LinsysJacf0);
+  PIVMem pm = PIVCreate(CTX, si, pJ0, LinsysJacf0);
   TEST_ASSERT(pm != NULL);
 
   N_Vector Y = N_VNew_Serial(si->N_all_orders, CTX);
@@ -67,10 +62,10 @@ int main(void)
   TEST_ASSERT(spec[2] == 0);
   TEST_ASSERT(spec[3] == 0);
 
-  DDDAEState state = DDDAEStateCreate(si);
+  DDDAEState state = DDDAEStateCreate(CTX, si);
   TEST_ASSERT(state != NULL)
 
-  TEST_ASSERT(DDDAEStateUpdate(si, PIVGetSpec(pm), state) == SUN_SUCCESS);
+  TEST_ASSERT(DDDAEStateUpdate(state, pm->spec) == SUN_SUCCESS);
 
   Pair_sunindextype* aliases = state->diff_var_aliases;
   TEST_ASSERT(aliases[0].fst == 3);

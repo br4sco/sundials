@@ -12,8 +12,7 @@ int main(void)
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
   sunindextype i, j, k;
-  DDStaticInfo si = DDStaticInfoCreate(CTX,
-                                       PENDULUM_N,
+  DDStaticInfo si = DDStaticInfoCreate(PENDULUM_N,
                                        PENDULUM_C,
                                        PENDULUM_D,
                                        PENDULUM_VAR_IDX_MAP,

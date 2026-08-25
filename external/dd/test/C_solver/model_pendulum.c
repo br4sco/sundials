@@ -54,8 +54,7 @@ int main(int argc, char* argv[])
   TEST_ASSERT(SUNContext_Create(SUN_COMM_NULL, &sunctx) == SUN_SUCCESS);
 
   /* Compute DAE structure. */
-  DDStaticInfo si = DDStaticInfoCreate(sunctx,
-                                       PENDULUM_N,
+  DDStaticInfo si = DDStaticInfoCreate(PENDULUM_N,
                                        PENDULUM_C,
                                        PENDULUM_D,
                                        PENDULUM_VAR_IDX_MAP,
@@ -86,7 +85,7 @@ int main(int argc, char* argv[])
   PendulumY0(data, theta0, Y);
 
   /* Create pivot memory and compute initial spec. */
-  PivMem pm = PIVCreate(sunctx, si, pJ0, PendulumJacf0);
+  PIVMem pm = PIVCreate(sunctx, si, pJ0, PendulumJacf0);
   TEST_ASSERT(pm);
   TEST_ASSERT(PIVSetUserData(pm, data) == SUN_SUCCESS);
   sunbooleantype spec_changed;
@@ -96,8 +95,7 @@ int main(int argc, char* argv[])
   DDMem dd_mem = DDCreate(sunctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(DDInit(dd_mem, si, PendulumRes, PIVGetSpec(pm), t0, Y) ==
-              IDA_SUCCESS);
+  TEST_ASSERT(DDInit(dd_mem, si, PendulumRes, pm->spec, t0, Y) == IDA_SUCCESS);
 
   TEST_ASSERT(DDSetUserData(dd_mem, data) == IDA_SUCCESS);
 
@@ -176,7 +174,7 @@ int main(int argc, char* argv[])
     TEST_ASSERT(PIVPivot(pm, ZERO, t, Y, &spec_changed) == SUN_SUCCESS);
     if (spec_changed)
     {
-      TEST_ASSERT(DDSetSpec(dd_mem, PIVGetSpec(pm)) == SUN_SUCCESS);
+      TEST_ASSERT(DDSetSpec(dd_mem, pm->spec) == SUN_SUCCESS);
     }
 
     const sunrealtype x = P_Ith(Y, 0, 0), y = P_Ith(Y, 1, 0),

@@ -15,8 +15,7 @@ int main(void)
 {
   SUNContext_Create(SUN_COMM_NULL, &CTX);
 
-  DDStaticInfo si = DDStaticInfoCreate(CTX,
-                                       PENDULUM_N,
+  DDStaticInfo si = DDStaticInfoCreate(PENDULUM_N,
                                        PENDULUM_C,
                                        PENDULUM_D,
                                        PENDULUM_VAR_IDX_MAP,
@@ -28,7 +27,7 @@ int main(void)
   TEST_ASSERT(J0 != NULL);
   PIVMatrix pJ0 = PIVMatWrapDense(J0);
   TEST_ASSERT(pJ0 != NULL);
-  PivMem pm = PIVCreate(CTX, si, pJ0, PendulumJacf0);
+  PIVMem pm = PIVCreate(CTX, si, pJ0, PendulumJacf0);
   TEST_ASSERT(pm != NULL);
 
   PendulumData data = {.m = ONE, .param = {ONE, ZERO}};
@@ -61,15 +60,15 @@ int main(void)
   TEST_ASSERT(known[1]);
   TEST_ASSERT(known[2]);
 
-  uint8_t* spec = PIVGetSpec(pm);
+  uint8_t* spec = pm->spec;
   TEST_ASSERT(spec[0] == 0);
   TEST_ASSERT(spec[1] == 2);
   TEST_ASSERT(spec[2] == 0);
 
-  DDDAEState state = DDDAEStateCreate(si);
+  DDDAEState state = DDDAEStateCreate(CTX, si);
   TEST_ASSERT(state != NULL)
 
-  TEST_ASSERT(DDDAEStateUpdate(si, PIVGetSpec(pm), state) == SUN_SUCCESS);
+  TEST_ASSERT(DDDAEStateUpdate(state, pm->spec) == SUN_SUCCESS);
 
   Pair_sunindextype* aliases = state->diff_var_aliases;
   TEST_ASSERT(aliases[0].fst == 3);

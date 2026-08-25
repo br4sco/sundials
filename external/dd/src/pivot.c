@@ -12,13 +12,13 @@
 #include "sundials/sundials_errors.h"
 #include "sundials/sundials_types.h"
 
-PivMem PIVCreate(SUNContext sunctx, DDStaticInfo si, PIVMatrix J_0, PIVJacFn0 jacfn0)
+PIVMem PIVCreate(SUNContext sunctx, DDStaticInfo si, PIVMatrix J_0, PIVJacFn0 jacfn0)
 {
   SUNFunctionBegin(sunctx);
 
   SUNAssertNull(jacfn0, SUN_ERR_ARG_CORRUPT);
 
-  PivMem pm = calloc(1, sizeof(*pm));
+  PIVMem pm = calloc(1, sizeof(*pm));
   SUNAssertNull(pm, SUN_ERR_MALLOC_FAIL);
 
   pm->sunctx = sunctx;
@@ -91,7 +91,7 @@ PivMem PIVCreate(SUNContext sunctx, DDStaticInfo si, PIVMatrix J_0, PIVJacFn0 ja
   return pm;
 }
 
-SUNErrCode PIVSetUserData(PivMem pm, void* user_data)
+SUNErrCode PIVSetUserData(PIVMem pm, void* user_data)
 {
   if (pm == NULL)
   {
@@ -104,11 +104,11 @@ SUNErrCode PIVSetUserData(PivMem pm, void* user_data)
   return SUN_SUCCESS;
 }
 
-void PIVDestroy(PivMem* pm_ptr)
+void PIVDestroy(PIVMem* pm_ptr)
 {
   if (pm_ptr == NULL || *pm_ptr == NULL) { return; }
 
-  PivMem pm = *pm_ptr;
+  PIVMem pm = *pm_ptr;
 
   uint8_t K = pm->K;
 
@@ -144,7 +144,7 @@ void PIVDestroy(PivMem* pm_ptr)
   *pm_ptr = NULL;
 }
 
-void PIVPrint(PivMem pm, FILE* file)
+void PIVPrint(PIVMem pm, FILE* file)
 {
   DDStaticInfo si = pm->si;
 
@@ -166,7 +166,7 @@ void PIVPrint(PivMem pm, FILE* file)
   fprintf(file, "--- END PIVOTDATA ------\n");
 }
 
-static void PDReset(PivMem pm)
+static void PDReset(PIVMem pm)
 {
   const sunindextype N = pm->N;
   const uint8_t K      = pm->K;
@@ -175,7 +175,7 @@ static void PDReset(PivMem pm)
   memset(pm->known_k_flat, SUNFALSE, N * K * sizeof(*pm->known_k_flat));
 }
 
-SUNErrCode PIVPivot(PivMem pm,
+SUNErrCode PIVPivot(PIVMem pm,
                     sunrealtype tol,
                     sunrealtype t,
                     N_Vector Y,
@@ -295,8 +295,6 @@ SUNErrCode PIVPivot(PivMem pm,
 
   return SUN_SUCCESS;
 }
-
-uint8_t* PIVGetSpec(PivMem pm) { return pm->spec; }
 
 /* void PSPrintSubmat(const Structure si[static 1], const PivMem pm[static 1], */
 /*                    uint8_t k, FILE* file) */
