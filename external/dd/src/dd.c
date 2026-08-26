@@ -1239,17 +1239,7 @@ static int DDLsJacFnWrapper2(sunrealtype t,
   /* Call user supplied Jacobian callback function. */
 
   void* ud = dd_mem->dd_user_data;
-  int flag = dd_mem->dd_jacfn2(state->yy_diff_alias_row,
-                               state->yp_diff_alias_row,
-                               t,
-                               cj,
-                               yy,
-                               rr,
-                               J,
-                               ud,
-                               tmp1,
-                               tmp2,
-                               tmp3);
+  int flag = dd_mem->dd_jacfn2(state, t, cj, yy, rr, J, ud, tmp1, tmp2, tmp3);
 
   return flag;
 }
@@ -1258,10 +1248,8 @@ static int DDLsJacFnWrapper2(sunrealtype t,
  * DDJacFn_CSC
  * -------------------------------------------------------------------------- */
 
-int DDJacFn_CSC(sunindextype M,
+int DDJacFn_CSC(DDDAEState state,
                 DDLsJacColFn_CSC* fn,
-                const sunindextype yy_diff_alias_row[static 1],
-                const sunindextype yp_diff_alias_row[static 1],
                 sunrealtype t,
                 sunrealtype cj,
                 N_Vector Y,
@@ -1276,11 +1264,11 @@ int DDJacFn_CSC(sunindextype M,
 
   SUNCheck(SUNMatGetID(J) == SUNMATRIX_SPARSE, SUN_ERR_ARG_WRONGTYPE);
   SUNCheck(SM_SPARSETYPE_S(J) == CSC_MAT, SUN_ERR_ARG_OUTOFRANGE);
-  SUNCheck((0 < M) && (M < SM_ROWS_S(J)), SUN_ERR_ARG_OUTOFRANGE);
+
+  const sunindextype* yy_diff_alias_row = state->yy_diff_alias_row;
+  const sunindextype* yp_diff_alias_row = state->yp_diff_alias_row;
 
   const sunindextype N = SM_COLUMNS_S(J);
-
-  SUNCheck(M < N, SUN_ERR_ARG_OUTOFRANGE);
 
   sunindextype nnz = 0;
   for (sunindextype j = 0; j < N; ++j)

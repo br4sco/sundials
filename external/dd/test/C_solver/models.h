@@ -237,8 +237,7 @@ static inline int LotkaVolterraJacColFn_CSC(sunindextype j,
   return 0;
 }
 
-int LotkaVolterraJacfn_CSC(const sunindextype yy_diff_alias_row[static 1],
-                           const sunindextype yp_diff_alias_row[static 1],
+int LotkaVolterraJacfn_CSC(DDDAEState state,
                            SUNDIALS_MAYBE_UNUSED sunrealtype t,
                            sunrealtype cj,
                            N_Vector Y,
@@ -249,10 +248,8 @@ int LotkaVolterraJacfn_CSC(const sunindextype yy_diff_alias_row[static 1],
                            SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
                            SUNDIALS_MAYBE_UNUSED N_Vector tmp3)
 {
-  return DDJacFn_CSC(2,
+  return DDJacFn_CSC(state,
                      LotkaVolterraJacColFn_CSC,
-                     yy_diff_alias_row,
-                     yp_diff_alias_row,
                      t,
                      cj,
                      Y,
@@ -841,8 +838,7 @@ static inline int PendulumJacColFn_CSC(sunindextype j,
 /*   return 0; */
 /* } */
 
-int PendulumJacfn_CSC(const sunindextype yy_diff_alias_row[static 1],
-                      const sunindextype yp_diff_alias_row[static 1],
+int PendulumJacfn_CSC(DDDAEState state,
                       SUNDIALS_MAYBE_UNUSED sunrealtype t,
                       sunrealtype cj,
                       N_Vector Y,
@@ -853,10 +849,8 @@ int PendulumJacfn_CSC(const sunindextype yy_diff_alias_row[static 1],
                       SUNDIALS_MAYBE_UNUSED N_Vector tmp2,
                       SUNDIALS_MAYBE_UNUSED N_Vector tmp3)
 {
-  return DDJacFn_CSC(5,
+  return DDJacFn_CSC(state,
                      PendulumJacColFn_CSC,
-                     yy_diff_alias_row,
-                     yp_diff_alias_row,
                      t,
                      cj,
                      Y,

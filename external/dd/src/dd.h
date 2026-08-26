@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <sundials/sundials_core.h>
 
+#include "dynamic_info.h"
 #include "static_info.h"
 #include "sundials/sundials_nvector.h"
 
@@ -112,18 +113,9 @@ typedef int DDLsJacFn1(sunrealtype t,
  * `DDSetSpec`). For such an equation at row r, column j of J has entry
  * 1 at row r and column k of J has entry -cj at row r.
  *
- * @param[in] yy_diff_alias_row for each column j, `yy_diff_alias_row[j]`
- *                              is the row r of the alias equation
- *                              G[r] = Y[k] - Yp[j] for some k, or -1 if
- *                              no such equation exists. Column j of J has
- *                              entry -cj at row r.
- *
- * @param[in] yp_diff_alias_row for each column j, `yp_diff_alias_row[j]`
- *                              is the row r of the alias equation
- *                              G[r] = Y[j] - Yp[k] for some k, or -1 if
- *                              no such equation exists. Column j of J has
- *                              entry 1 at row r.
- *
+ * @param[in] state is the current dynamic DAE state; see `DDDAEState`
+ *                  (`yy_diff_alias_row` and `yp_diff_alias_row`) for the
+ *                  alias equation rows referenced above.
  * @param[in] t is the independent variable.
  * @param[in] cj is proportional to the inverse of the step-size.
  * @param[in] Y are the dependent variables and their derivatives.
@@ -139,8 +131,7 @@ typedef int DDLsJacFn1(sunrealtype t,
  * @return a value `0` on success, a positive value if a recoverable error
  *         occurred and a negative value if a non-recoverable error occurred.
  */
-typedef int DDLsJacFn2(const sunindextype yy_diff_alias_row[static 1],
-                       const sunindextype yp_diff_alias_row[static 1],
+typedef int DDLsJacFn2(DDDAEState state,
                        sunrealtype t,
                        sunrealtype cj,
                        N_Vector Y,
@@ -215,24 +206,14 @@ typedef struct
  * @brief Assembles the n×n sparse CSC Jacobian by calling `fn` for each
  * column and appending alias equation entries.
  *
- * For each column j = 0..n-1, calls `fn` to fill rows 0 to M-1, then
- * appends the alias equation Jacobian entries for rows M..n-1 from
+ * For each column j = 0..n-1, calls `fn` to fill the user's rows of the
+ * Jacobian, then appends the alias equation Jacobian entries from `state`'s
  * `yy_diff_alias_row` and `yp_diff_alias_row`.
  *
- * @param[in] M is the number of user equation rows that `fn` fills per
- *              column (i.e. the number of rows in F).
- * @param[in] fn computes the j-th M × 1 column of the user Jacobian.
- * @param[in] yy_diff_alias_row for each column j, `yy_diff_alias_row[j]`
- *                              is the row r of the alias equation
- *                              G[r] = Y[k] - Yp[j] for some k, or -1 if
- *                              no such equation exists. Column j of J gets
- *                              entry -cj at row r.
- * @param[in] yp_diff_alias_row for each column j, `yp_diff_alias_row[j]`
- *                              is the row r of the alias equation
- *                              G[r] = Y[j] - Yp[k] for some k, or -1 if
- *                              no such equation exists. Column j of J gets
- *                              entry 1 at row r.
- *
+ * @param[in] state is the current dynamic DAE state; see `DDDAEState`
+ *                  (`yy_diff_alias_row` and `yp_diff_alias_row`) for the
+ *                  alias equation rows referenced above.
+ * @param[in] fn computes the j-th column of the user Jacobian.
  * @param[in] t is the independent variable.
  * @param[in] cj is proportional to the inverse of the step-size.
  * @param[in] Y are the dependent variables and their derivatives.
@@ -248,10 +229,8 @@ typedef struct
  * @return a value `0` on success, a positive value if a recoverable error
  *         occurred and a negative value if a non-recoverable error occurred.
  */
-int DDJacFn_CSC(sunindextype M,
+int DDJacFn_CSC(DDDAEState state,
                 DDLsJacColFn_CSC* fn,
-                const sunindextype yy_diff_alias_row[static 1],
-                const sunindextype yp_diff_alias_row[static 1],
                 sunrealtype t,
                 sunrealtype cj,
                 N_Vector Y,
