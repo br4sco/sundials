@@ -57,11 +57,12 @@ struct DDDAEStateRec
   sunindextype* yp_diff_alias_row;
 };
 
+/** @brief Dynamic (dummy-derivative-dependent) state of a high-index DAE. */
 typedef struct DDDAEStateRec* DDDAEState;
 
 /** @brief Destroys dynamic DAE state and sets `*state_ptr` to NULL; a no-op
  * if `state_ptr` or `*state_ptr` is NULL. */
-void DDDAEStateDestroy(DDDAEState*);
+void DDDAEStateDestroy(DDDAEState* state_ptr);
 
 /**
  * @brief Creates dynamic DAE state for the given static info.
@@ -70,18 +71,18 @@ void DDDAEStateDestroy(DDDAEState*);
  * @param[in] si     Static DAE info; stored by reference (not copied) and
  *                    must outlive the returned state.
  *
- * @return A newly allocated @ref DDDAEState, or NULL on failure.
+ * @return A newly allocated @ref DDDAEStateRec, or NULL on failure.
  */
-DDDAEState DDDAEStateCreate(SUNContext, DDStaticInfo);
+DDDAEState DDDAEStateCreate(SUNContext sunctx, DDStaticInfo si);
 
 /**
  * @brief Creates a deep copy of dynamic DAE state.
  *
  * @param[in] state State to clone; the clone shares its `si`.
  *
- * @return A newly allocated @ref DDDAEState, or NULL on failure.
+ * @return A newly allocated @ref DDDAEStateRec, or NULL on failure.
  */
-DDDAEState DDDAEStateClone(DDDAEState);
+DDDAEState DDDAEStateClone(DDDAEState state);
 
 /**
  * @brief Copies dynamic DAE state from `src` into `dst`.
@@ -89,7 +90,7 @@ DDDAEState DDDAEStateClone(DDDAEState);
  * @param[in]  src Source state.
  * @param[out] dst Destination state; must share the same `si` as `src`.
  */
-void DDDAEStateCopy(DDDAEState, DDDAEState);
+void DDDAEStateCopy(DDDAEState src, DDDAEState dst);
 
 /**
  * @brief Recomputes dynamic DAE state for a new dummy derivative
@@ -104,6 +105,6 @@ void DDDAEStateCopy(DDDAEState, DDDAEState);
  *
  * @return SUN_SUCCESS or an error code.
  */
-SUNErrCode DDDAEStateUpdate(DDDAEState, uint8_t*);
+SUNErrCode DDDAEStateUpdate(DDDAEState state, uint8_t* spec);
 
 #endif

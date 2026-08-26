@@ -74,7 +74,7 @@ typedef _PIVMem* PIVMem;
  *                    to evaluate @ref PIVJacFn0 and extract sub-matrices.
  * @param[in] jacfn0  Jacobian callback (required; must not be NULL).
  *
- * @return A newly allocated @ref PivMem, or NULL on failure.
+ * @return A newly allocated @ref PIVMem, or NULL on failure.
  */
 PIVMem PIVCreate(SUNContext sunctx,
                  DDStaticInfo si,
