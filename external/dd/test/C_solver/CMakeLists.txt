@@ -98,4 +98,113 @@ foreach(test_tuple ${unit_tests})
 
 endforeach()
 
+# Exploratory driver (not a regression test): sweeps the time between pivot
+# checks and logs IDAPrintAllStats at each successful pivot. Build only, run
+# manually with varying dt_check, e.g.:
+#   ./model_pendulum_pivot_interval d 0.5
+add_executable(model_pendulum_pivot_interval model_pendulum_pivot_interval.c)
+
+set_target_properties(model_pendulum_pivot_interval PROPERTIES
+                       FOLDER "dd_tests")
+
+target_include_directories(
+  model_pendulum_pivot_interval
+  PRIVATE $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+          ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src
+          ${CMAKE_SOURCE_DIR}/external/dd/src)
+
+target_link_libraries(model_pendulum_pivot_interval sundials_idas
+                      sundials_nvecserial dd ${EXE_EXTRA_LINK_LIBS}
+                      ${SUNLINSOLKLU_LIBS})
+
+# Exploratory driver (not a regression test): no pivot-check schedule at all
+# -- PIVPivot is only called reactively, when IDA's failure counters grow.
+# Build only, run manually, e.g.:
+#   ./model_pendulum_pivot_adaptive d
+add_executable(model_pendulum_pivot_adaptive
+               model_pendulum_pivot_adaptive.c)
+
+set_target_properties(model_pendulum_pivot_adaptive PROPERTIES
+                       FOLDER "dd_tests")
+
+target_include_directories(
+  model_pendulum_pivot_adaptive
+  PRIVATE $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+          ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src
+          ${CMAKE_SOURCE_DIR}/external/dd/src)
+
+target_link_libraries(model_pendulum_pivot_adaptive sundials_idas
+                      sundials_nvecserial dd ${EXE_EXTRA_LINK_LIBS}
+                      ${SUNLINSOLKLU_LIBS})
+
+# Exploratory driver (not a regression test): same as model_pendulum_pivot_adaptive
+# but tracks only IDA's error test fail counter (netf) -- instrumenting all
+# three failure counters showed netf alone accounted for 45/46 successful
+# pivots, so ncfn/nnf are dropped here. Build only, run manually, e.g.:
+#   ./model_pendulum_pivot_adaptive_netf d
+add_executable(model_pendulum_pivot_adaptive_netf
+               model_pendulum_pivot_adaptive_netf.c)
+
+set_target_properties(model_pendulum_pivot_adaptive_netf PROPERTIES
+                       FOLDER "dd_tests")
+
+target_include_directories(
+  model_pendulum_pivot_adaptive_netf
+  PRIVATE $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+          ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src
+          ${CMAKE_SOURCE_DIR}/external/dd/src)
+
+target_link_libraries(model_pendulum_pivot_adaptive_netf sundials_idas
+                      sundials_nvecserial dd ${EXE_EXTRA_LINK_LIBS}
+                      ${SUNLINSOLKLU_LIBS})
+
+# Exploratory driver (not a regression test): same as
+# model_pendulum_pivot_adaptive_netf but suppresses further checks for dt
+# time units after a successful pivot, to cut down on false-positive checks
+# that tend to cluster right after a real pivot. Build only, run manually
+# with varying dt, e.g.:
+#   ./model_pendulum_pivot_adaptive_netf_cooldown d 0.5
+add_executable(model_pendulum_pivot_adaptive_netf_cooldown
+               model_pendulum_pivot_adaptive_netf_cooldown.c)
+
+set_target_properties(model_pendulum_pivot_adaptive_netf_cooldown PROPERTIES
+                       FOLDER "dd_tests")
+
+target_include_directories(
+  model_pendulum_pivot_adaptive_netf_cooldown
+  PRIVATE $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+          ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src
+          ${CMAKE_SOURCE_DIR}/external/dd/src)
+
+target_link_libraries(model_pendulum_pivot_adaptive_netf_cooldown sundials_idas
+                      sundials_nvecserial dd ${EXE_EXTRA_LINK_LIBS}
+                      ${SUNLINSOLKLU_LIBS})
+
+# Benchmark variants of the three pivoting-approach drivers above, for
+# comparing their raw overhead with hyperfine. Same source, but compiled
+# with DD_BENCH defined so DD_LOG/DD_PRINT_ALL_STATS compile out to nothing
+# -- isolating the cost of the pivoting logic (PIVPivot calls, IDAGetNum*
+# queries, DDSolve) from file I/O, which would otherwise dominate the
+# timing and mask any difference between the three approaches.
+function(dd_add_bench_target base_target source)
+  set(bench_target ${base_target}_bench)
+  add_executable(${bench_target} ${source})
+  target_compile_definitions(${bench_target} PRIVATE DD_BENCH)
+  set_target_properties(${bench_target} PROPERTIES FOLDER "dd_tests")
+  target_include_directories(
+    ${bench_target}
+    PRIVATE $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+            ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/external/dd/src)
+  target_link_libraries(${bench_target} sundials_idas sundials_nvecserial dd
+                        ${EXE_EXTRA_LINK_LIBS} ${SUNLINSOLKLU_LIBS})
+endfunction()
+
+dd_add_bench_target(model_pendulum_pivot_interval
+                     model_pendulum_pivot_interval.c)
+dd_add_bench_target(model_pendulum_pivot_adaptive_netf
+                     model_pendulum_pivot_adaptive_netf.c)
+dd_add_bench_target(model_pendulum_pivot_adaptive_netf_cooldown
+                     model_pendulum_pivot_adaptive_netf_cooldown.c)
+
 message(STATUS "Added DD C tests ")
