@@ -3,7 +3,7 @@
 
 #include <sunmatrix/sunmatrix_dense.h>
 
-#include "matrix.h"
+#include "dd_staged_pivot_matrix.h"
 #include "test.h"
 
 int main(void)
@@ -11,18 +11,18 @@ int main(void)
   SUNContext ctx;
   SUNContext_Create(SUN_COMM_NULL, &ctx);
 
-  SUNMatrix A = SUNDenseMatrix(3, 2, ctx);
-  PIVMatrix B = PIVMatWrapDense(A);
+  SUNMatrix A           = SUNDenseMatrix(3, 2, ctx);
+  DDStagedPivotMatrix B = DDStagedPivotMatWrapDense(A);
   TEST_ASSERT(B != NULL);
 
-  PIVMatrixWorkspace ws = PIVMatCreateWS(B);
+  DDStagedPivotMatrixWorkspace ws = DDStagedPivotMatCreateWS(B);
   TEST_ASSERT(ws != NULL);
 
-  PIVMatDestroy(B);
+  DDStagedPivotMatDestroy(B);
   B = NULL;
-  PIVMatWSDestroy(ws);
+  DDStagedPivotMatWSDestroy(ws);
   ws = NULL;
-  PIVMatWSDestroy(ws);
+  DDStagedPivotMatWSDestroy(ws);
   SUNMatDestroy(A);
   return EXIT_SUCCESS;
 }

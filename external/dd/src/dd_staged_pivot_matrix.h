@@ -1,5 +1,5 @@
-#ifndef _DD_MATRIX_H
-#define _DD_MATRIX_H
+#ifndef _DD_STAGED_PIVOT_MATRIX_H
+#define _DD_STAGED_PIVOT_MATRIX_H
 
 #include <assert.h>
 #include <sundials/priv/sundials_errors_impl.h>
@@ -15,74 +15,78 @@
  */
 
 /* ==========================================================================
- * Generic Pivot Matrix
+ * Generic Staged Pivot Matrix
  * ========================================================================== */
 
 /* --------------------------------------------------------------------------
- * Generic Pivot Matrices and Operations
+ * Generic Staged Pivot Matrices and Operations
  * -------------------------------------------------------------------------- */
 
-typedef struct _PIVMatrix_Ops PIVMatrix_Ops;
+typedef struct _DDStagedPivotMatrix_Ops DDStagedPivotMatrix_Ops;
 
 typedef struct
 {
   SUNMatrix A;
-  const PIVMatrix_Ops* ops;
-} _PIVMatrix;
+  const DDStagedPivotMatrix_Ops* ops;
+} _DDStagedPivotMatrix;
 
-/** @brief Opaque handle to a pivot matrix. */
-typedef _PIVMatrix* PIVMatrix;
+/** @brief Opaque handle to a staged pivot matrix. */
+typedef _DDStagedPivotMatrix* DDStagedPivotMatrix;
 
-/** @brief Opaque handle to a pivot matrix workspace. */
-typedef struct _generic_PIVMatrixWorkspace* PIVMatrixWorkspace;
+/** @brief Opaque handle to a staged pivot matrix workspace. */
+typedef struct _generic_DDStagedPivotMatrixWorkspace* DDStagedPivotMatrixWorkspace;
 
-/** @brief Identifies the type of a PIVMatrixWorkspace. */
+/** @brief Identifies the type of a DDStagedPivotMatrixWorkspace. */
 typedef enum
 {
-  PIVMATRIXWS_ROWPIVOT /**< Workspace holding the subset of rows to pivot on */
-} PIVMatrixWorkspaceID;
+  DDSTAGEDPIVOTMATRIXWS_ROWPIVOT /**< Workspace holding the subset of rows to pivot on */
+} DDStagedPivotMatrixWorkspaceID;
 
-struct _generic_PIVMatrixWorkspace
+struct _generic_DDStagedPivotMatrixWorkspace
 {
-  PIVMatrixWorkspaceID id;
+  DDStagedPivotMatrixWorkspaceID id;
   void* content;
-  void (*destroy)(PIVMatrixWorkspace);
+  void (*destroy)(DDStagedPivotMatrixWorkspace);
 };
 
 /** @brief API of extended generic matrices. */
-struct _PIVMatrix_Ops
+struct _DDStagedPivotMatrix_Ops
 {
-  PIVMatrixWorkspace (*const createworkspace)(PIVMatrix);
-  SUNErrCode (*const pivot)(PIVMatrix,
-                            PIVMatrixWorkspace,
+  DDStagedPivotMatrixWorkspace (*const createworkspace)(DDStagedPivotMatrix);
+  SUNErrCode (*const pivot)(DDStagedPivotMatrix,
+                            DDStagedPivotMatrixWorkspace,
                             sunrealtype,
                             sunindextype n,
                             sunindextype[static n]);
-  PIVMatrix (*const clonesub)(PIVMatrix,
-                              sunindextype m,
-                              const sunindextype[static m],
-                              sunindextype n,
-                              const sunindextype[static n]);
-  SUNErrCode (*const copysub)(PIVMatrix,
-                              PIVMatrix,
+  DDStagedPivotMatrix (*const clonesub)(DDStagedPivotMatrix,
+                                        sunindextype m,
+                                        const sunindextype[static m],
+                                        sunindextype n,
+                                        const sunindextype[static n]);
+  SUNErrCode (*const copysub)(DDStagedPivotMatrix,
+                              DDStagedPivotMatrix,
                               const sunindextype*,
                               const sunindextype*);
 };
 
 /* --------------------------------------------------------------------------
- * Generic Pivot Matrix Interface
+ * Generic Staged Pivot Matrix Interface
  * -------------------------------------------------------------------------- */
 
 /** @brief Destroys extended matrix. */
-void PIVMatDestroy(PIVMatrix);
+void DDStagedPivotMatDestroy(DDStagedPivotMatrix);
 
 /** @brief Returns underlying Sundials matrix. */
-static inline SUNMatrix PIVMatGetSUNMat(PIVMatrix self) { return self->A; }
+static inline SUNMatrix DDStagedPivotMatGetSUNMat(DDStagedPivotMatrix self)
+{
+  return self->A;
+}
 
 /** @brief Create extended matrix workspace. */
-static inline PIVMatrixWorkspace PIVMatCreateWS(PIVMatrix self)
+static inline DDStagedPivotMatrixWorkspace DDStagedPivotMatCreateWS(
+  DDStagedPivotMatrix self)
 {
-  SUNFunctionBegin(PIVMatGetSUNMat(self)->sunctx);
+  SUNFunctionBegin(DDStagedPivotMatGetSUNMat(self)->sunctx);
   SUNCheckNull(self->ops->createworkspace, SUN_ERR_NOT_IMPLEMENTED);
   return self->ops->createworkspace(self);
 }
@@ -91,21 +95,21 @@ static inline PIVMatrixWorkspace PIVMatCreateWS(PIVMatrix self)
  * @brief Reorders columns of the matrix so the most linearly independent
  *        ones come first.
  *
- * @param[in]    self       Pivot matrix.
- * @param[in]    ws         Workspace allocated by PIVMatCreateWS().
+ * @param[in]    self       Staged pivot matrix.
+ * @param[in]    ws         Workspace allocated by DDStagedPivotMatCreateWS().
  * @param[in]    tol        Pivot tolerance.
  * @param[in]    n          Number of columns.
  * @param[inout] colpivots  On entry, the column indices to consider; on
  *                          return, reordered so the leading columns form a
  *                          well-conditioned square sub-matrix.
  */
-static inline SUNErrCode PIVMatPivot(PIVMatrix self,
-                                     PIVMatrixWorkspace ws,
-                                     sunrealtype tol,
-                                     sunindextype n,
-                                     sunindextype colpivots[static n])
+static inline SUNErrCode DDStagedPivotMatPivot(DDStagedPivotMatrix self,
+                                               DDStagedPivotMatrixWorkspace ws,
+                                               sunrealtype tol,
+                                               sunindextype n,
+                                               sunindextype colpivots[static n])
 {
-  SUNFunctionBegin(PIVMatGetSUNMat(self)->sunctx);
+  SUNFunctionBegin(DDStagedPivotMatGetSUNMat(self)->sunctx);
   SUNCheck(self->ops->pivot, SUN_ERR_NOT_IMPLEMENTED);
   return self->ops->pivot(self, ws, tol, n, colpivots);
 }
@@ -120,15 +124,16 @@ static inline SUNErrCode PIVMatPivot(PIVMatrix self,
  * @param[in] n     Number of columns in the sub-matrix.
  * @param[in] cols  Column indices into `self` (length n).
  *
- * @return A newly allocated @ref PIVMatrix, or NULL on failure.
+ * @return A newly allocated @ref DDStagedPivotMatrix, or NULL on failure.
  */
-static inline PIVMatrix PIVMatCloneSub(const PIVMatrix self,
-                                       sunindextype m,
-                                       const sunindextype rows[static m],
-                                       sunindextype n,
-                                       const sunindextype cols[static n])
+static inline DDStagedPivotMatrix DDStagedPivotMatCloneSub(
+  const DDStagedPivotMatrix self,
+  sunindextype m,
+  const sunindextype rows[static m],
+  sunindextype n,
+  const sunindextype cols[static n])
 {
-  SUNFunctionBegin(PIVMatGetSUNMat(self)->sunctx);
+  SUNFunctionBegin(DDStagedPivotMatGetSUNMat(self)->sunctx);
   SUNCheckNull(self->ops->clonesub, SUN_ERR_NOT_IMPLEMENTED);
   return self->ops->clonesub(self, m, rows, n, cols);
 }
@@ -138,16 +143,16 @@ static inline PIVMatrix PIVMatCloneSub(const PIVMatrix self,
  *
  * @param[in]  self  Source matrix.
  * @param[out] A     Destination sub-matrix (must already be allocated,
- *                   e.g. via PIVMatCloneSub()).
+ *                   e.g. via DDStagedPivotMatCloneSub()).
  * @param[in]  rows  Row indices into `self`.
  * @param[in]  cols  Column indices into `self`.
  */
-static inline SUNErrCode PIVCopySub(PIVMatrix self,
-                                    PIVMatrix A,
-                                    const sunindextype* rows,
-                                    const sunindextype* cols)
+static inline SUNErrCode DDStagedPivotMatCopySub(DDStagedPivotMatrix self,
+                                                 DDStagedPivotMatrix A,
+                                                 const sunindextype* rows,
+                                                 const sunindextype* cols)
 {
-  SUNFunctionBegin(PIVMatGetSUNMat(self)->sunctx);
+  SUNFunctionBegin(DDStagedPivotMatGetSUNMat(self)->sunctx);
   SUNCheck(self->ops->copysub, SUN_ERR_NOT_IMPLEMENTED);
   return self->ops->copysub(self, A, rows, cols);
 }
@@ -157,21 +162,21 @@ static inline SUNErrCode PIVCopySub(PIVMatrix self,
  * -------------------------------------------------------------------------- */
 
 /** @brief Destroys extended matrix workspace. */
-void PIVMatWSDestroy(PIVMatrixWorkspace);
+void DDStagedPivotMatWSDestroy(DDStagedPivotMatrixWorkspace);
 
 /* ==========================================================================
  * Dense DD Matrix
  * ========================================================================== */
 
-/** @brief Wraps a dense Sundials matrix in a pivot matrix. */
-PIVMatrix PIVMatWrapDense(SUNMatrix);
+/** @brief Wraps a dense Sundials matrix in a staged pivot matrix. */
+DDStagedPivotMatrix DDStagedPivotMatWrapDense(SUNMatrix);
 
 /* ==========================================================================
  * Sparse DD Matrix
  * ========================================================================== */
 
-/** @brief Wraps a sparse Sundials matrix in a pivot matrix. */
-PIVMatrix PIVMatWrapSparse(SUNMatrix);
+/** @brief Wraps a sparse Sundials matrix in a staged pivot matrix. */
+DDStagedPivotMatrix DDStagedPivotMatWrapSparse(SUNMatrix);
 
 /**
  * @brief Allocates a sparse SUNMatrix sized for the augmented DAE Jacobian.
@@ -183,9 +188,9 @@ PIVMatrix PIVMatWrapSparse(SUNMatrix);
  *
  * @return A newly allocated sparse SUNMatrix, or NULL on failure.
  */
-SUNMatrix PIVSparseSUNMatFromStructure(const DDStaticInfo* si,
-                                       sunindextype nnz,
-                                       int sparsetype,
-                                       SUNContext sunctx);
+SUNMatrix DDStagedPivotSparseSUNMatFromStructure(const DDStaticInfo* si,
+                                                 sunindextype nnz,
+                                                 int sparsetype,
+                                                 SUNContext sunctx);
 
 #endif

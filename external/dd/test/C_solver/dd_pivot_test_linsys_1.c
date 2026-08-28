@@ -2,10 +2,10 @@
 #include <sundials/sundials_core.h>
 #include <sunmatrix/sunmatrix_dense.h>
 
+#include "dd_staged_pivot_impl.h"
+#include "dd_staged_pivot_matrix.h"
 #include "dynamic_info.h"
-#include "matrix.h"
 #include "models.h"
-#include "pivot.h"
 #include "static_info.h"
 #include "test.h"
 #include "test_structure.h"
@@ -20,9 +20,9 @@ int main(void)
   TEST_ASSERT(si != NULL);
   SUNMatrix J0 = SUNDenseMatrix(LINSYS_N, LINSYS_N, CTX);
   TEST_ASSERT(J0 != NULL);
-  PIVMatrix pJ0 = PIVMatWrapDense(J0);
+  DDStagedPivotMatrix pJ0 = DDStagedPivotMatWrapDense(J0);
   TEST_ASSERT(pJ0 != NULL);
-  PIVMem pm = PIVCreate(CTX, si, pJ0, LinsysJacf0);
+  DDStagedPivot pm = DDSPCreateStaged(CTX, si, pJ0, LinsysJacf0);
   TEST_ASSERT(pm != NULL);
 
   N_Vector Y = N_VNew_Serial(si->N_all_orders, CTX);
@@ -30,7 +30,8 @@ int main(void)
   N_VConst(ZERO, Y);
 
   sunbooleantype spec_changed;
-  TEST_ASSERT(PIVPivot(pm, ZERO, ZERO, Y, &spec_changed) == SUN_SUCCESS);
+  TEST_ASSERT(DDSPPivotStaged(pm, ZERO, ZERO, Y, NULL, &spec_changed) ==
+              SUN_SUCCESS);
 
   size_t k              = 0;
   sunbooleantype* known = pm->known_k[k];
@@ -90,11 +91,11 @@ int main(void)
   TEST_ASSERT(yp[4] == 9);
   TEST_ASSERT(yp[5] == 10);
 
-  PIVDestroy(&pm);
+  DDSPDestroyStaged(&pm);
   DDStaticInfoDestroy(si);
   N_VDestroy(Y);
   SUNMatDestroy(J0);
-  PIVMatDestroy(pJ0);
+  DDStagedPivotMatDestroy(pJ0);
   DDDAEStateDestroy(&state);
 
   return EXIT_SUCCESS;

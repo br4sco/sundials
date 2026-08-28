@@ -12,9 +12,9 @@
 
 #include "dd.h"
 #include "dd_math.h"
-#include "matrix.h"
+#include "dd_staged_pivot.h"
+#include "dd_staged_pivot_matrix.h"
 #include "models.h"
-#include "pivot.h"
 #include "static_info.h"
 #include "sundials/sundials_types.h"
 #include "test.h"
@@ -68,7 +68,7 @@ int main(int argc, char* argv[])
   /* Allocate state and Jacobian data. */
   SUNMatrix J0 = SUNDenseMatrix(si->N, si->N, sunctx);
   TEST_ASSERT(J0);
-  PIVMatrix pJ0 = PIVMatWrapDense(J0);
+  DDStagedPivotMatrix pJ0 = DDStagedPivotMatWrapDense(J0);
   TEST_ASSERT(pJ0);
   N_Vector Y = N_VNew_Serial(N, sunctx);
   TEST_ASSERT(Y);
@@ -84,18 +84,20 @@ int main(int argc, char* argv[])
   sunrealtype theta0 = SUN_RCONST(PI) / FIVE + SUN_RCONST(PI) / TWO;
   PendulumY0(data, theta0, Y);
 
-  /* Create pivot memory and compute initial spec. */
-  PIVMem pm = PIVCreate(sunctx, si, pJ0, PendulumJacf0);
-  TEST_ASSERT(pm);
-  TEST_ASSERT(PIVSetUserData(pm, data) == SUN_SUCCESS);
+  /* Create pivot policy and compute initial spec. */
+  DDStatePivot sp = DDSPStaged(sunctx, si, pJ0, PendulumJacf0, ZERO);
+  TEST_ASSERT(sp != NULL);
+
+  uint8_t spec[si->N];
   sunbooleantype spec_changed;
-  TEST_ASSERT(PIVPivot(pm, ZERO, t0, Y, &spec_changed) == SUN_SUCCESS);
+  TEST_ASSERT(DDSPUpdate(sp, t0, Y, data, spec, &spec_changed) >= 0);
 
   /* Create solver session. */
   DDMem dd_mem = DDCreate(sunctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(DDInit(dd_mem, si, PendulumRes, pm->spec, t0, Y) == IDA_SUCCESS);
+  TEST_ASSERT(DDInit(dd_mem, si, PendulumRes, spec, t0, Y) == IDA_SUCCESS);
+  TEST_ASSERT(DDSetStatePivot(dd_mem, sp) == SUN_SUCCESS);
 
   TEST_ASSERT(DDSetUserData(dd_mem, data) == IDA_SUCCESS);
 
@@ -163,7 +165,7 @@ int main(int argc, char* argv[])
   TEST_ASSERT(file);
 
   /* Solve and output solution. */
-  fprintf(file, "t,x,y,λ,ΔL,p\n"); /* print header */
+  fprintf(file, "t,x,y,λ,ΔL\n"); /* print header */
 
   int flag      = IDA_SUCCESS;
   sunrealtype t = t0;
@@ -171,23 +173,16 @@ int main(int argc, char* argv[])
 
   while (flag != IDA_TSTOP_RETURN)
   {
-    TEST_ASSERT(PIVPivot(pm, ZERO, t, Y, &spec_changed) == SUN_SUCCESS);
-    if (spec_changed)
-    {
-      TEST_ASSERT(DDSetSpec(dd_mem, pm->spec) == SUN_SUCCESS);
-    }
-
     const sunrealtype x = P_Ith(Y, 0, 0), y = P_Ith(Y, 1, 0),
                       lam = P_Ith(Y, 2, 0);
 
     fprintf(file,
-            "%.20f,%.20f,%.20f,%.20f,%.20f,%d\n",
+            "%.20f,%.20f,%.20f,%.20f,%.20f\n",
             t,
             x,
             y,
             lam,
-            x * x + y * y - l * l,
-            spec_changed ? 1 : 0);
+            x * x + y * y - l * l);
 
     t += tstep;
 
@@ -197,8 +192,8 @@ int main(int argc, char* argv[])
 
   /* Cleanup */
   DDFree(&dd_mem);
-  PIVDestroy(&pm);
-  PIVMatDestroy(pJ0);
+  DDSPDestroy(sp);
+  DDStagedPivotMatDestroy(pJ0);
   N_VDestroy(Y);
   DDStaticInfoDestroy(si);
   SUNContext_Free(&sunctx);

@@ -7,9 +7,10 @@
  * Error code definitions
  * ---------------------------------------------------------------------------*/
 
-#define DD_ERR_CODE_LIST(ENTRY)                  \
-  ENTRY(DD_ERR_DD_MEM_NULL, "DD memory is NULL") \
-  ENTRY(DD_ERR_IDA_ERR, "an IDA error occured")  \
+#define DD_ERR_CODE_LIST(ENTRY)                                   \
+  ENTRY(DD_ERR_DD_MEM_NULL, "DD memory is NULL")                  \
+  ENTRY(DD_ERR_IDA_ERR, "an IDA error occured")                   \
+  ENTRY(DD_ERR_STATE_PIVOT_FAIL, "the state pivot update failed") \
   ENTRY(DD_ERR_GENERIC, "an error occured")
 
 #define DD_EXPAND_TO_ENUM(name, description) name,

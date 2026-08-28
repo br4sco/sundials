@@ -2,9 +2,9 @@
 #include <sundials/sundials_core.h>
 #include <sunmatrix/sunmatrix_dense.h>
 
-#include "matrix.h"
+#include "dd_staged_pivot_impl.h"
+#include "dd_staged_pivot_matrix.h"
 #include "models.h"
-#include "pivot.h"
 #include "static_info.h"
 #include "test.h"
 #include "test_structure.h"
@@ -23,18 +23,18 @@ int main(void)
   TEST_ASSERT(si != NULL);
   SUNMatrix J0 = SUNDenseMatrix(si->N, si->N, CTX);
   TEST_ASSERT(J0 != NULL);
-  PIVMatrix pJ0 = PIVMatWrapDense(J0);
+  DDStagedPivotMatrix pJ0 = DDStagedPivotMatWrapDense(J0);
   TEST_ASSERT(pJ0 != NULL);
 
-  PIVMem pm = PIVCreate(CTX, si, pJ0, PendulumJacf0);
+  DDStagedPivot pm = DDSPCreateStaged(CTX, si, pJ0, PendulumJacf0);
   TEST_ASSERT(pm != NULL);
-  PIVDestroy(&pm);
+  DDSPDestroyStaged(&pm);
   pm = NULL;
-  PIVDestroy(&pm);
+  DDSPDestroyStaged(&pm);
 
   DDStaticInfoDestroy(si);
   SUNMatDestroy(J0);
-  PIVMatDestroy(pJ0);
+  DDStagedPivotMatDestroy(pJ0);
 
   return EXIT_SUCCESS;
 }

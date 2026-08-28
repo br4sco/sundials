@@ -10,16 +10,25 @@ endif()
 
 include_directories(${CMAKE_SOURCE_DIR}/src)
 
-set(dd_SOURCES matrix.c static_info.c dynamic_info.c pivot.c dd_err.c dd.c)
+set(dd_SOURCES
+    dd_staged_pivot_matrix.c
+    static_info.c
+    dynamic_info.c
+    dd_staged_pivot.c
+    dd_state_pivot.c
+    dd_err.c
+    dd.c)
 
 set(dd_HEADERS
     alg.h
     darr.h
     dd_math.h
-    matrix.h
+    dd_staged_pivot_matrix.h
     static_info.h
     dynamic_info.h
-    pivot.h
+    dd_staged_pivot.h
+    dd_staged_pivot_impl.h
+    dd_state_pivot.h
     dd_err.h
     dd.h)
 

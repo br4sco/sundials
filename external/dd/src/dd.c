@@ -413,6 +413,9 @@ struct DDMemRec
   DDDAEState dd_state;
   uint8_t* dd_spec;
 
+  DDStatePivot dd_state_pivot;
+  uint8_t* dd_spec_scratch;
+
   /* IDA Memory */
 
   IDAMem ida_mem;
@@ -449,6 +452,8 @@ struct DDMemRec
  * -------------------------------------------------------------------------- */
 
 static int DDResFnWrapper(sunrealtype, N_Vector, N_Vector, N_Vector, void*);
+
+static int DDApplyStatePivot(DDMem);
 
 static void DDSetYpFromY(DDStaticInfo, DDDAEState, N_Vector, N_Vector);
 static void DDSetId(DDStaticInfo, DDDAEState, N_Vector);
@@ -651,6 +656,7 @@ void DDFree(DDMem* dd_mem_ptr)
   DDAdjCleanupCheckpoints(dd_mem);
   DDDAEStateDestroy(&dd_mem->dd_state);
   free(dd_mem->dd_spec);
+  free(dd_mem->dd_spec_scratch);
 
   if (dd_mem->ida_mem != NULL)
   {
@@ -722,6 +728,13 @@ int DDInit(DDMem dd_mem,
     return SUN_ERR_MEM_FAIL;
   }
   memcpy(dd_mem->dd_spec, spec, si->N * sizeof(*dd_mem->dd_spec));
+
+  dd_mem->dd_spec_scratch = malloc(si->N * sizeof(*dd_mem->dd_spec_scratch));
+  if (dd_mem->dd_spec_scratch == NULL)
+  {
+    DDHandleErr(SUN_ERR_MEM_FAIL);
+    return SUN_ERR_MEM_FAIL;
+  }
 
   DDDAEState state = DDDAEStateCreate(sunctx, si);
   if (state == NULL)
@@ -895,6 +908,9 @@ int DDSolve(DDMem dd_mem,
     DDHandleErr(SUN_ERR_ARG_CORRUPT);
     return SUN_ERR_ARG_CORRUPT;
   }
+
+  int pflag = DDApplyStatePivot(dd_mem);
+  if (pflag < 0) { return pflag; }
 
   int flag = IDASolve(dd_mem->ida_mem, tout, tret, Y, dd_mem->dd_yp, itask);
   if (flag < 0)
@@ -1358,6 +1374,72 @@ int DDSetUserData(DDMem dd_mem, void* user_data)
   }
 
   dd_mem->dd_user_data = user_data;
+
+  return DD_SUCCESS;
+}
+
+/* --------------------------------------------------------------------------
+ * DDSetStatePivot
+ * -------------------------------------------------------------------------- */
+
+int DDSetStatePivot(DDMem dd_mem, DDStatePivot sp)
+{
+  if (dd_mem == NULL)
+  {
+    DDHandleErrWithCtx(DD_ERR_DD_MEM_NULL, NULL);
+    return DD_ERR_GENERIC;
+  }
+
+  dd_mem->dd_state_pivot = sp;
+
+  return DD_SUCCESS;
+}
+
+/* --------------------------------------------------------------------------
+ * DDApplyStatePivot
+ * -------------------------------------------------------------------------- */
+
+static int DDApplyStatePivot(DDMem dd_mem)
+{
+  SUNFunctionBegin(dd_mem->sunctx);
+
+  if (dd_mem->dd_state_pivot == NULL) { return DD_SUCCESS; }
+
+  DDStaticInfo si = dd_mem->dd_si;
+  memcpy(dd_mem->dd_spec_scratch,
+         dd_mem->dd_spec,
+         si->N * sizeof(*dd_mem->dd_spec));
+
+  void* ida_mem = dd_mem->ida_mem;
+
+  sunrealtype t;
+  if ((IDAGetCurrentTime(ida_mem, &t) != IDA_SUCCESS) ||
+      (IDAGetDky(ida_mem, t, 0, dd_mem->dd_yy) != IDA_SUCCESS))
+  {
+    DDHandleErr(DD_ERR_IDA_ERR);
+    return DD_ERR_IDA_ERR;
+  }
+
+  sunbooleantype spec_changed = SUNFALSE;
+  int cflag                   = DDSPUpdate(dd_mem->dd_state_pivot,
+                         t,
+                         dd_mem->dd_yy,
+                         dd_mem->dd_user_data,
+                         dd_mem->dd_spec_scratch,
+                         &spec_changed);
+  if (cflag < 0)
+  {
+    DDHandleErr(DD_ERR_STATE_PIVOT_FAIL);
+    return DD_ERR_STATE_PIVOT_FAIL;
+  }
+
+  if (spec_changed)
+  {
+    if (DDSetSpec(dd_mem, dd_mem->dd_spec_scratch) < 0)
+    {
+      return DD_ERR_IDA_ERR;
+    }
+  }
 
   return DD_SUCCESS;
 }
@@ -2200,6 +2282,9 @@ int DDSolveF(DDMem dd_mem,
     DDHandleErr(SUN_ERR_ARG_CORRUPT);
     return SUN_ERR_ARG_CORRUPT;
   }
+
+  int pflag = DDApplyStatePivot(dd_mem);
+  if (pflag < 0) { return pflag; }
 
   IDAMem ida_mem = dd_mem->ida_mem;
   N_Vector yp    = dd_mem->dd_yp;

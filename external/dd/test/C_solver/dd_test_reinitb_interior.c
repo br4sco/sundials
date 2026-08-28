@@ -10,9 +10,9 @@
 
 #include "dd.h"
 #include "dd_math.h"
-#include "matrix.h"
+#include "dd_staged_pivot.h"
+#include "dd_staged_pivot_matrix.h"
 #include "models.h"
-#include "pivot.h"
 #include "static_info.h"
 #include "sundials/sundials_types.h"
 #include "test.h"
@@ -66,7 +66,7 @@ int main(void)
 
   SUNMatrix J0 = SUNDenseMatrix(si->N, si->N, sunctx);
   TEST_ASSERT(J0);
-  PIVMatrix pJ0 = PIVMatWrapDense(J0);
+  DDStagedPivotMatrix pJ0 = DDStagedPivotMatWrapDense(J0);
   TEST_ASSERT(pJ0);
   N_Vector Y = N_VNew_Serial(si->N_all_orders, sunctx);
   TEST_ASSERT(Y);
@@ -80,16 +80,18 @@ int main(void)
   sunrealtype theta0 = SUN_RCONST(PI) / SUN_RCONST(6.0);
   PendulumY0(data, theta0, Y);
 
-  PIVMem pm = PIVCreate(sunctx, si, pJ0, PendulumJacf0);
-  TEST_ASSERT(pm);
-  TEST_ASSERT(PIVSetUserData(pm, data) == SUN_SUCCESS);
+  DDStatePivot sp = DDSPStaged(sunctx, si, pJ0, PendulumJacf0, ZERO);
+  TEST_ASSERT(sp != NULL);
+
+  uint8_t spec[si->N];
   sunbooleantype spec_changed;
-  TEST_ASSERT(PIVPivot(pm, ZERO, t0, Y, &spec_changed) == SUN_SUCCESS);
+  TEST_ASSERT(DDSPUpdate(sp, t0, Y, data, spec, &spec_changed) >= 0);
 
   DDMem dd_mem = DDCreate(sunctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(DDInit(dd_mem, si, PendulumRes, pm->spec, t0, Y) == IDA_SUCCESS);
+  TEST_ASSERT(DDInit(dd_mem, si, PendulumRes, spec, t0, Y) == IDA_SUCCESS);
+  TEST_ASSERT(DDSetStatePivot(dd_mem, sp) == SUN_SUCCESS);
 
   TEST_ASSERT(DDAdjInit(dd_mem, Nd, IDA_POLYNOMIAL) == IDA_SUCCESS);
 
@@ -115,12 +117,6 @@ int main(void)
 
   while (SUNTRUE)
   {
-    TEST_ASSERT(PIVPivot(pm, ZERO, t, Y, &spec_changed) == SUN_SUCCESS);
-    if (spec_changed)
-    {
-      TEST_ASSERT(DDSetSpec(dd_mem, pm->spec) == SUN_SUCCESS);
-    }
-
     t += tstep;
     if (t >= tout) { break; }
 
@@ -286,8 +282,8 @@ int main(void)
   /* Cleanup */
   DDAdjFree(dd_mem);
   DDFree(&dd_mem);
-  PIVDestroy(&pm);
-  PIVMatDestroy(pJ0);
+  DDSPDestroy(sp);
+  DDStagedPivotMatDestroy(pJ0);
   N_VDestroy(Y);
   N_VDestroy(yyB);
   N_VDestroy(ypB);

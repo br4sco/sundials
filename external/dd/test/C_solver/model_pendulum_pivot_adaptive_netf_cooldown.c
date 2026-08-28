@@ -13,9 +13,9 @@
 
 #include "dd.h"
 #include "dd_math.h"
-#include "matrix.h"
+#include "dd_staged_pivot.h"
+#include "dd_staged_pivot_matrix.h"
 #include "models.h"
-#include "pivot.h"
 #include "static_info.h"
 #include "sundials/sundials_types.h"
 #include "test.h"
@@ -38,9 +38,9 @@
 #endif
 
 /*
- * Experiment driver: no pivot-check schedule at all. PIVPivot is only
+ * Experiment driver: no pivot-check schedule at all. DDSPPivotStaged is only
  * called reactively: every output step, it checks whether IDA's error test
- * fail counter (netf) grew since the last check. If so, it calls PIVPivot
+ * fail counter (netf) grew since the last check. If so, it calls DDSPPivotStaged
  * right away, on the theory that a growing failure count means the solver
  * is fighting a stale (pre-pivot) DAE structure. If netf didn't grow, no
  * check happens at all that step.
@@ -53,10 +53,138 @@
  * spec, producing checks that are very unlikely to find another spec
  * change -- false positives this cooldown is meant to suppress. netf is
  * still sampled every step during the cooldown (so growth isn't silently
- * missed once the cooldown ends), only the PIVPivot call itself is
+ * missed once the cooldown ends), only the DDSPPivotStaged call itself is
  * skipped. Monitoring only happens once per tstep (0.1), since DDSolve
  * advances directly to the next output time under IDA_NORMAL.
  */
+
+/*
+ * Wraps DDSPStaged() with a netf-reactive trigger policy plus a
+ * cooldown: after a successful pivot, no further check happens until dt
+ * time units later, even if netf keeps growing in the meantime.
+ */
+typedef struct
+{
+  DDStatePivot inner;
+  void* ida_mem;
+  FILE* stats_file;
+  sunrealtype dt;
+  sunrealtype cooldown_until;
+  long int prev_netf;
+  int pivot_num, check_num, piv_call_count, suppressed_count;
+} NetfCooldownSpecContent;
+
+static int NetfCooldownSpecUpdate(DDStatePivot self,
+                                  sunrealtype t,
+                                  N_Vector Y,
+                                  void* user_data,
+                                  uint8_t* spec,
+                                  sunbooleantype* spec_changed)
+{
+  NetfCooldownSpecContent* c = (NetfCooldownSpecContent*)self->content;
+  void* ida_mem              = c->ida_mem;
+
+  *spec_changed = SUNFALSE;
+
+  long int netf;
+  if (IDAGetNumErrTestFails(ida_mem, &netf) < 0) { return -1; }
+  sunbooleantype trouble = netf > c->prev_netf;
+  c->prev_netf           = netf;
+
+  if (trouble && t < c->cooldown_until)
+  {
+    c->suppressed_count++;
+    return 0;
+  }
+
+  if (!trouble) { return 0; }
+
+  c->check_num++;
+  c->piv_call_count++;
+
+  if (DDSPUpdate(c->inner, t, Y, user_data, spec, spec_changed) < 0)
+  {
+    return -1;
+  }
+
+  DD_LOG(c->stats_file,
+         "# check %d at t=%.6f (netf=%ld, spec_changed=%d)\n",
+         c->check_num,
+         (double)t,
+         netf,
+         *spec_changed ? 1 : 0);
+
+  if (*spec_changed)
+  {
+    c->pivot_num++;
+    c->cooldown_until = t + c->dt;
+    DD_LOG(c->stats_file, "# pivot %d at t=%.6f\n", c->pivot_num, (double)t);
+    if (DD_PRINT_ALL_STATS(ida_mem, c->stats_file, SUN_OUTPUTFORMAT_TABLE) !=
+        IDA_SUCCESS)
+    {
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+static void NetfCooldownSpecDestroy(DDStatePivot self)
+{
+  NetfCooldownSpecContent* c = (NetfCooldownSpecContent*)self->content;
+
+  DD_LOG(c->stats_file, "# total DDSPPivotStaged calls: %d\n", c->piv_call_count);
+  DD_LOG(c->stats_file, "# total pivots: %d\n", c->pivot_num);
+  DD_LOG(c->stats_file,
+         "# checks suppressed by cooldown: %d\n",
+         c->suppressed_count);
+  DD_LOG(c->stats_file,
+         "# precision (pivots / checks): %.1f%%\n",
+         c->piv_call_count > 0
+           ? 100.0 * (double)c->pivot_num / (double)c->piv_call_count
+           : 0.0);
+
+  DDSPDestroy(c->inner);
+  free(c);
+  free(self);
+}
+
+static DDStatePivot NetfCooldownSpecCreate(DDStatePivot inner,
+                                           void* ida_mem,
+                                           FILE* stats_file,
+                                           sunrealtype t0,
+                                           sunrealtype dt)
+{
+  NetfCooldownSpecContent* content = malloc(sizeof(*content));
+  if (content == NULL) { return NULL; }
+
+  content->inner   = inner;
+  content->ida_mem = ida_mem;
+
+  content->stats_file       = stats_file;
+  content->dt               = dt;
+  content->cooldown_until   = t0;
+  content->prev_netf        = 0;
+  content->pivot_num        = 0;
+  content->check_num        = 0;
+  content->piv_call_count   = 0;
+  content->suppressed_count = 0;
+
+  DDStatePivot sp = DDSPNewEmpty();
+  if (sp == NULL)
+  {
+    DDSPDestroy(content->inner);
+    free(content);
+    return NULL;
+  }
+
+  sp->content      = content;
+  sp->ops->update  = NetfCooldownSpecUpdate;
+  sp->ops->destroy = NetfCooldownSpecDestroy;
+
+  return sp;
+}
+
 int main(int argc, char* argv[])
 {
   enum
@@ -103,7 +231,7 @@ int main(int argc, char* argv[])
   /* Allocate state and Jacobian data. */
   SUNMatrix J0 = SUNDenseMatrix(si->N, si->N, sunctx);
   TEST_ASSERT(J0);
-  PIVMatrix pJ0 = PIVMatWrapDense(J0);
+  DDStagedPivotMatrix pJ0 = DDStagedPivotMatWrapDense(J0);
   TEST_ASSERT(pJ0);
   N_Vector Y = N_VNew_Serial(N, sunctx);
   TEST_ASSERT(Y);
@@ -119,18 +247,19 @@ int main(int argc, char* argv[])
   sunrealtype theta0 = SUN_RCONST(PI) / FIVE + SUN_RCONST(PI) / TWO;
   PendulumY0(data, theta0, Y);
 
-  /* Create pivot memory and compute initial spec. */
-  PIVMem pm = PIVCreate(sunctx, si, pJ0, PendulumJacf0);
-  TEST_ASSERT(pm);
-  TEST_ASSERT(PIVSetUserData(pm, data) == SUN_SUCCESS);
+  /* Create pivot policy and compute initial spec. */
+  DDStatePivot inner = DDSPStaged(sunctx, si, pJ0, PendulumJacf0, ZERO);
+  TEST_ASSERT(inner != NULL);
+
+  uint8_t spec[si->N];
   sunbooleantype spec_changed;
-  TEST_ASSERT(PIVPivot(pm, ZERO, t0, Y, &spec_changed) == SUN_SUCCESS);
+  TEST_ASSERT(DDSPUpdate(inner, t0, Y, data, spec, &spec_changed) >= 0);
 
   /* Create solver session. */
   DDMem dd_mem = DDCreate(sunctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(DDInit(dd_mem, si, PendulumRes, pm->spec, t0, Y) == IDA_SUCCESS);
+  TEST_ASSERT(DDInit(dd_mem, si, PendulumRes, spec, t0, Y) == IDA_SUCCESS);
 
   TEST_ASSERT(DDSetUserData(dd_mem, data) == IDA_SUCCESS);
 
@@ -209,69 +338,31 @@ int main(int argc, char* argv[])
   FILE* stats_file = fopen(stats_filename, "w");
   TEST_ASSERT(stats_file);
 
-  /* Solve and output solution. */
-  DD_LOG(file, "t,x,y,λ,ΔL,p\n"); /* print header */
-
   void* ida_mem = DDGetIDAMem(dd_mem);
 
-  long int prev_netf;
-  TEST_ASSERT(IDAGetNumErrTestFails(ida_mem, &prev_netf) == IDA_SUCCESS);
+  DDStatePivot sp = NetfCooldownSpecCreate(inner, ida_mem, stats_file, t0, dt);
+  TEST_ASSERT(sp != NULL);
+  TEST_ASSERT(DDSetStatePivot(dd_mem, sp) == SUN_SUCCESS);
+
+  /* Solve and output solution. */
+  DD_LOG(file, "t,x,y,λ,ΔL\n"); /* print header */
 
   int flag      = IDA_SUCCESS;
   sunrealtype t = t0;
   sunrealtype tret;
-  int pivot_num              = 0;
-  int check_num              = 0;
-  int piv_call_count         = 0;
-  int suppressed_count       = 0;
-  sunrealtype cooldown_until = t0;
 
   while (flag != IDA_TSTOP_RETURN)
   {
-    spec_changed = SUNFALSE;
-
-    long int netf;
-    TEST_ASSERT(IDAGetNumErrTestFails(ida_mem, &netf) == IDA_SUCCESS);
-    sunbooleantype trouble = netf > prev_netf;
-    prev_netf              = netf;
-
-    if (trouble && t < cooldown_until) { suppressed_count++; }
-    else if (trouble)
-    {
-      check_num++;
-      piv_call_count++;
-
-      TEST_ASSERT(PIVPivot(pm, ZERO, t, Y, &spec_changed) == SUN_SUCCESS);
-      DD_LOG(stats_file,
-             "# check %d at t=%.6f (netf=%ld, spec_changed=%d)\n",
-             check_num,
-             (double)t,
-             netf,
-             spec_changed ? 1 : 0);
-
-      if (spec_changed)
-      {
-        pivot_num++;
-        cooldown_until = t + dt;
-        DD_LOG(stats_file, "# pivot %d at t=%.6f\n", pivot_num, (double)t);
-        TEST_ASSERT(DD_PRINT_ALL_STATS(ida_mem,
-                                       stats_file,
-                                       SUN_OUTPUTFORMAT_TABLE) == IDA_SUCCESS);
-        TEST_ASSERT(DDSetSpec(dd_mem, pm->spec) == SUN_SUCCESS);
-      }
-    }
-
     const sunrealtype x = P_Ith(Y, 0, 0), y = P_Ith(Y, 1, 0),
                       lam = P_Ith(Y, 2, 0);
 
     DD_LOG(file,
-           "%.20f,%.20f,%.20f,%.20f,%.20f,%d\n",
+           "%.20f,%.20f,%.20f,%.20f,%.20f\n",
            t,
            x,
            y,
            lam,
-           x * x + y * y - l * l,
-           spec_changed ? 1 : 0);
+           x * x + y * y - l * l);
 
     t += tstep;
 
@@ -279,18 +370,10 @@ int main(int argc, char* argv[])
     TEST_ASSERT(flag >= 0);
   }
 
-  DD_LOG(stats_file, "# total PIVPivot calls: %d\n", piv_call_count);
-  DD_LOG(stats_file, "# total pivots: %d\n", pivot_num);
-  DD_LOG(stats_file, "# checks suppressed by cooldown: %d\n", suppressed_count);
-  DD_LOG(stats_file,
-         "# precision (pivots / checks): %.1f%%\n",
-         piv_call_count > 0 ? 100.0 * (double)pivot_num / (double)piv_call_count
-                            : 0.0);
-
   /* Cleanup */
   DDFree(&dd_mem);
-  PIVDestroy(&pm);
-  PIVMatDestroy(pJ0);
+  DDSPDestroy(sp);
+  DDStagedPivotMatDestroy(pJ0);
   N_VDestroy(Y);
   DDStaticInfoDestroy(si);
   SUNContext_Free(&sunctx);

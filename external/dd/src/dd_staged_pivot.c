@@ -5,20 +5,23 @@
 #include <sundials/sundials_matrix.h>
 #include <sunmatrix/sunmatrix_dense.h>
 
-#include "dd_err.h"
-#include "matrix.h"
-#include "pivot.h"
+#include "dd_staged_pivot.h"
+#include "dd_staged_pivot_impl.h"
+#include "dd_staged_pivot_matrix.h"
 #include "static_info.h"
 #include "sundials/sundials_errors.h"
 #include "sundials/sundials_types.h"
 
-PIVMem PIVCreate(SUNContext sunctx, DDStaticInfo si, PIVMatrix J_0, PIVJacFn0 jacfn0)
+DDStagedPivot DDSPCreateStaged(SUNContext sunctx,
+                               DDStaticInfo si,
+                               DDStagedPivotMatrix J_0,
+                               DDStagedPivotJacFn0* jacfn0)
 {
   SUNFunctionBegin(sunctx);
 
   SUNAssertNull(jacfn0, SUN_ERR_ARG_CORRUPT);
 
-  PIVMem pm = calloc(1, sizeof(*pm));
+  DDStagedPivot pm = calloc(1, sizeof(*pm));
   SUNAssertNull(pm, SUN_ERR_MALLOC_FAIL);
 
   pm->sunctx = sunctx;
@@ -45,10 +48,10 @@ PIVMem PIVCreate(SUNContext sunctx, DDStaticInfo si, PIVMatrix J_0, PIVJacFn0 ja
   pm->vars_k = malloc(K * sizeof(*pm->vars_k));
   SUNAssertNull(pm->vars_k, SUN_ERR_MALLOC_FAIL);
 
-  pm->J_k = malloc(K * sizeof(PIVMatrix*));
+  pm->J_k = malloc(K * sizeof(DDStagedPivotMatrix*));
   SUNAssertNull(pm->J_k, SUN_ERR_MALLOC_FAIL);
 
-  pm->wss = malloc(K * sizeof(PIVMatrixWorkspace*));
+  pm->wss = malloc(K * sizeof(DDStagedPivotMatrixWorkspace*));
   SUNAssertNull(pm->wss, SUN_ERR_MALLOC_FAIL);
 
   pm->known_k_flat = calloc(K * si_N, sizeof(*pm->known_k_flat));
@@ -74,11 +77,11 @@ PIVMem PIVCreate(SUNContext sunctx, DDStaticInfo si, PIVMatrix J_0, PIVJacFn0 ja
     }
     else
     {
-      PIVMatrix A_sub = PIVMatCloneSub(J_0, M, I, N, J);
+      DDStagedPivotMatrix A_sub = DDStagedPivotMatCloneSub(J_0, M, I, N, J);
       SUNCheckLastErrNull();
       pm->J_k[k] = A_sub;
 
-      PIVMatrixWorkspace ws = PIVMatCreateWS(A_sub);
+      DDStagedPivotMatrixWorkspace ws = DDStagedPivotMatCreateWS(A_sub);
       SUNCheckLastErrNull();
       pm->wss[k] = ws;
     }
@@ -91,24 +94,11 @@ PIVMem PIVCreate(SUNContext sunctx, DDStaticInfo si, PIVMatrix J_0, PIVJacFn0 ja
   return pm;
 }
 
-SUNErrCode PIVSetUserData(PIVMem pm, void* user_data)
-{
-  if (pm == NULL)
-  {
-    DDHandleErrWithCtx(SUN_ERR_CORRUPT, NULL);
-    return SUN_ERR_CORRUPT;
-  }
-
-  pm->user_data = user_data;
-
-  return SUN_SUCCESS;
-}
-
-void PIVDestroy(PIVMem* pm_ptr)
+void DDSPDestroyStaged(DDStagedPivot* pm_ptr)
 {
   if (pm_ptr == NULL || *pm_ptr == NULL) { return; }
 
-  PIVMem pm = *pm_ptr;
+  DDStagedPivot pm = *pm_ptr;
 
   uint8_t K = pm->K;
 
@@ -121,11 +111,11 @@ void PIVDestroy(PIVMem* pm_ptr)
   {
     for (size_t k = 0; k < K; ++k)
     {
-      PIVMatrix submat = pm->J_k[k];
+      DDStagedPivotMatrix submat = pm->J_k[k];
       if (submat)
       {
-        SUNMatDestroy(PIVMatGetSUNMat(submat));
-        PIVMatDestroy(submat);
+        SUNMatDestroy(DDStagedPivotMatGetSUNMat(submat));
+        DDStagedPivotMatDestroy(submat);
       }
     }
     free(pm->J_k);
@@ -133,7 +123,7 @@ void PIVDestroy(PIVMem* pm_ptr)
 
   if (pm->wss != NULL)
   {
-    for (size_t k = 0; k < K; ++k) { PIVMatWSDestroy(pm->wss[k]); }
+    for (size_t k = 0; k < K; ++k) { DDStagedPivotMatWSDestroy(pm->wss[k]); }
     free(pm->wss);
   }
 
@@ -144,29 +134,7 @@ void PIVDestroy(PIVMem* pm_ptr)
   *pm_ptr = NULL;
 }
 
-void PIVPrint(PIVMem pm, FILE* file)
-{
-  DDStaticInfo si = pm->si;
-
-  fprintf(file, "--- START PIVOTDATA ----\n");
-  for (uint8_t k = 0; k < si->K; ++k)
-  {
-    fprintf(file, "Stage k = %d:\n", DDSI_STAGE_FROM_INDEX(si, k));
-    for (sunindextype n = 0; n < si->N_k[k]; ++n)
-    {
-      const sunindextype j = si->vars_k[k][n];
-      fprintf(file,
-              "\t[%ld]%s^(%d)\t%s\n",
-              j,
-              DDSI_VAR_NAME(si, j),
-              DDSI_VAR_ORDER(si, k, j),
-              pm->known_k[k][j] ? "true" : "false");
-    }
-  }
-  fprintf(file, "--- END PIVOTDATA ------\n");
-}
-
-static void PDReset(PIVMem pm)
+static void PDReset(DDStagedPivot pm)
 {
   const sunindextype N = pm->N;
   const uint8_t K      = pm->K;
@@ -175,11 +143,12 @@ static void PDReset(PIVMem pm)
   memset(pm->known_k_flat, SUNFALSE, N * K * sizeof(*pm->known_k_flat));
 }
 
-SUNErrCode PIVPivot(PIVMem pm,
-                    sunrealtype tol,
-                    sunrealtype t,
-                    N_Vector Y,
-                    sunbooleantype* spec_changed)
+SUNErrCode DDSPPivotStaged(DDStagedPivot pm,
+                           sunrealtype tol,
+                           sunrealtype t,
+                           N_Vector Y,
+                           void* user_data,
+                           sunbooleantype* spec_changed)
 {
   SUNFunctionBegin(pm->sunctx);
 
@@ -189,7 +158,7 @@ SUNErrCode PIVPivot(PIVMem pm,
 
   PDReset(pm);
 
-  SUNCheckCall(pm->jacfn0(t, Y, PIVMatGetSUNMat(pm->J_0), pm->user_data));
+  SUNCheckCall(pm->jacfn0(t, Y, DDStagedPivotMatGetSUNMat(pm->J_0), user_data));
 
   for (uint8_t k = 0; k < si->K; ++k)
   {
@@ -237,11 +206,11 @@ SUNErrCode PIVPivot(PIVMem pm,
         sunindextype* pm_vars = pm->vars_k[k];
         memcpy(pm_vars, vars, N * sizeof(*pm_vars));
 
-        PIVMatrix J_k = pm->J_k[k];
-        SUNCheckCall(PIVCopySub(pm->J_0, J_k, eqns, pm_vars));
+        DDStagedPivotMatrix J_k = pm->J_k[k];
+        SUNCheckCall(DDStagedPivotMatCopySub(pm->J_0, J_k, eqns, pm_vars));
 
-        const PIVMatrixWorkspace ws = pm->wss[k];
-        SUNCheckCall(PIVMatPivot(J_k, ws, tol, N, pm_vars));
+        const DDStagedPivotMatrixWorkspace ws = pm->wss[k];
+        SUNCheckCall(DDStagedPivotMatPivot(J_k, ws, tol, N, pm_vars));
 
         for (sunindextype n = 0; n < N; ++n)
         {
@@ -295,15 +264,76 @@ SUNErrCode PIVPivot(PIVMem pm,
   return SUN_SUCCESS;
 }
 
-/* void PSPrintSubmat(const Structure si[static 1], const PivMem pm[static 1], */
-/*                    uint8_t k, FILE* file) */
-/* { */
-/*   for (sunindextype i = 0; i < si->st_Nk[k]; ++i) */
-/*   { */
-/*     sunindextype j = pm->pm_vars[k][i]; */
-/*     fprintf(file, "\td%d%s", DDSI_VAR_ORDER(si, k, j), DDSI_VAR_NAME(si, j)); */
-/*   } */
+/* --------------------------------------------------------------------------
+ * DDSPStaged: DDStatePivot backed by staged pivoting
+ * -------------------------------------------------------------------------- */
 
-/*   SUNMatrix mat = DDMatGetSUNMat(pm->pm_jacs[k]); */
-/*   if (SUNMatGetID(mat) == SUNMATRIX_DENSE) { SUNDenseMatrix_Print(mat, file); } */
-/* } */
+typedef struct
+{
+  DDStagedPivot pm;
+  sunrealtype tol;
+} DDStatePivotContent_Staged;
+
+static int DDSPUpdate_Staged(DDStatePivot self,
+                             sunrealtype t,
+                             N_Vector Y,
+                             void* user_data,
+                             uint8_t* spec,
+                             sunbooleantype* spec_changed)
+{
+  DDStatePivotContent_Staged* content = (DDStatePivotContent_Staged*)self->content;
+
+  if (DDSPPivotStaged(content->pm, content->tol, t, Y, user_data, spec_changed) !=
+      SUN_SUCCESS)
+  {
+    return -1;
+  }
+
+  if (*spec_changed)
+  {
+    memcpy(spec, content->pm->spec, content->pm->si->N * sizeof(*spec));
+  }
+
+  return 0;
+}
+
+static void DDSPDestroy_Staged(DDStatePivot self)
+{
+  DDStatePivotContent_Staged* content = (DDStatePivotContent_Staged*)self->content;
+  DDSPDestroyStaged(&content->pm);
+  free(content);
+  DDSPFreeEmpty(self);
+}
+
+DDStatePivot DDSPStaged(SUNContext sunctx,
+                        DDStaticInfo si,
+                        DDStagedPivotMatrix J_0,
+                        DDStagedPivotJacFn0* jacfn0,
+                        sunrealtype tol)
+{
+  DDStagedPivot pm = DDSPCreateStaged(sunctx, si, J_0, jacfn0);
+  if (pm == NULL) { return NULL; }
+
+  DDStatePivotContent_Staged* content = malloc(sizeof(*content));
+  if (content == NULL)
+  {
+    DDSPDestroyStaged(&pm);
+    return NULL;
+  }
+  content->pm  = pm;
+  content->tol = tol;
+
+  DDStatePivot sp = DDSPNewEmpty();
+  if (sp == NULL)
+  {
+    DDSPDestroyStaged(&pm);
+    free(content);
+    return NULL;
+  }
+
+  sp->content      = content;
+  sp->ops->update  = DDSPUpdate_Staged;
+  sp->ops->destroy = DDSPDestroy_Staged;
+
+  return sp;
+}

@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <sundials/sundials_core.h>
 
+#include "dd_state_pivot.h"
 #include "dynamic_info.h"
 #include "static_info.h"
 #include "sundials/sundials_nvector.h"
@@ -531,6 +532,17 @@ int DDSolve(DDMem dd_mem,
  * @return SUN_SUCCESS or an error code.
  */
 int DDSetSpec(DDMem dd_mem, uint8_t* spec);
+
+/**
+ * @brief Registers an optional DDStatePivot, invoked at the start of every
+ * DDSolve()/DDSolveF() call to propose an updated dummy derivative spec.
+ *
+ * @param[in] dd_mem Solver object.
+ * @param[in] sp     DDStatePivot, or NULL to disable (the default).
+ *
+ * @return SUN_SUCCESS or an error code.
+ */
+int DDSetStatePivot(DDMem dd_mem, DDStatePivot sp);
 
 /**
  * @brief Computes consistent initial values for the augmented DAE.

@@ -13,9 +13,9 @@
 
 #include "dd.h"
 #include "dd_math.h"
-#include "matrix.h"
+#include "dd_staged_pivot.h"
+#include "dd_staged_pivot_matrix.h"
 #include "models.h"
-#include "pivot.h"
 #include "static_info.h"
 #include "sundials/sundials_types.h"
 #include "test.h"
@@ -27,10 +27,10 @@
 #define FIVE SUN_RCONST(5.0)
 
 /*
- * Experiment driver: no pivot-check schedule at all. PIVPivot is only
+ * Experiment driver: no pivot-check schedule at all. DDSPPivotStaged is only
  * called reactively: every output step, it checks whether IDA's failure
  * counters (Error test fails / NLS step fails / NLS fails) grew since the
- * last check. If so, it calls PIVPivot right away, on the theory that a
+ * last check. If so, it calls DDSPPivotStaged right away, on the theory that a
  * growing failure count means the solver is fighting a stale (pre-pivot)
  * DAE structure. If none of the counters grew, no check happens at all
  * that step. Monitoring only happens once per tstep (0.1), since DDSolve
@@ -38,6 +38,160 @@
  * that appears and resolves within one 0.1 window is invisible to this
  * heuristic.
  */
+
+/*
+ * Wraps DDSPStaged() with the reactive trigger policy above: only
+ * re-pivots when one of IDA's failure counters has grown since the last
+ * check, and logs check/pivot stats to stats_file.
+ */
+typedef struct
+{
+  DDStatePivot inner;
+  void* ida_mem;
+  FILE* stats_file;
+  long int prev_netf, prev_ncfn, prev_nnf;
+  int pivot_num, check_num, piv_call_count;
+  int checks_by_netf, checks_by_ncfn, checks_by_nnf;
+  int pivots_by_netf, pivots_by_ncfn, pivots_by_nnf;
+} AdaptiveSpecContent;
+
+static int AdaptiveSpecUpdate(DDStatePivot self,
+                              sunrealtype t,
+                              N_Vector Y,
+                              void* user_data,
+                              uint8_t* spec,
+                              sunbooleantype* spec_changed)
+{
+  AdaptiveSpecContent* c = (AdaptiveSpecContent*)self->content;
+  void* ida_mem          = c->ida_mem;
+
+  *spec_changed = SUNFALSE;
+
+  long int netf, ncfn, nnf;
+  if (IDAGetNumErrTestFails(ida_mem, &netf) < 0) { return -1; }
+  if (IDAGetNumStepSolveFails(ida_mem, &ncfn) < 0) { return -1; }
+  if (IDAGetNumNonlinSolvConvFails(ida_mem, &nnf) < 0) { return -1; }
+
+  sunbooleantype trig_netf = netf > c->prev_netf;
+  sunbooleantype trig_ncfn = ncfn > c->prev_ncfn;
+  sunbooleantype trig_nnf  = nnf > c->prev_nnf;
+  sunbooleantype trouble   = trig_netf || trig_ncfn || trig_nnf;
+  c->prev_netf             = netf;
+  c->prev_ncfn             = ncfn;
+  c->prev_nnf              = nnf;
+
+  if (!trouble) { return 0; }
+
+  c->check_num++;
+  c->piv_call_count++;
+  c->checks_by_netf += trig_netf ? 1 : 0;
+  c->checks_by_ncfn += trig_ncfn ? 1 : 0;
+  c->checks_by_nnf += trig_nnf ? 1 : 0;
+
+  if (DDSPUpdate(c->inner, t, Y, user_data, spec, spec_changed) < 0)
+  {
+    return -1;
+  }
+
+  fprintf(c->stats_file,
+          "# check %d at t=%.6f (trigger: netf=%d ncfn=%d nnf=%d, "
+          "spec_changed=%d)\n",
+          c->check_num,
+          (double)t,
+          trig_netf ? 1 : 0,
+          trig_ncfn ? 1 : 0,
+          trig_nnf ? 1 : 0,
+          *spec_changed ? 1 : 0);
+
+  if (*spec_changed)
+  {
+    c->pivot_num++;
+    c->pivots_by_netf += trig_netf ? 1 : 0;
+    c->pivots_by_ncfn += trig_ncfn ? 1 : 0;
+    c->pivots_by_nnf += trig_nnf ? 1 : 0;
+    fprintf(c->stats_file, "# pivot %d at t=%.6f\n", c->pivot_num, (double)t);
+    if (IDAPrintAllStats(ida_mem, c->stats_file, SUN_OUTPUTFORMAT_TABLE) < 0)
+    {
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+static void AdaptiveSpecDestroy(DDStatePivot self)
+{
+  AdaptiveSpecContent* c = (AdaptiveSpecContent*)self->content;
+
+  fprintf(c->stats_file, "# total DDSPPivotStaged calls: %d\n", c->piv_call_count);
+  fprintf(c->stats_file, "# total pivots: %d\n", c->pivot_num);
+  fprintf(c->stats_file, "# trigger breakdown (checks -> pivots, precision):\n");
+  fprintf(c->stats_file,
+          "#   netf: %d -> %d (%.1f%%)\n",
+          c->checks_by_netf,
+          c->pivots_by_netf,
+          c->checks_by_netf > 0
+            ? 100.0 * (double)c->pivots_by_netf / (double)c->checks_by_netf
+            : 0.0);
+  fprintf(c->stats_file,
+          "#   ncfn: %d -> %d (%.1f%%)\n",
+          c->checks_by_ncfn,
+          c->pivots_by_ncfn,
+          c->checks_by_ncfn > 0
+            ? 100.0 * (double)c->pivots_by_ncfn / (double)c->checks_by_ncfn
+            : 0.0);
+  fprintf(c->stats_file,
+          "#   nnf : %d -> %d (%.1f%%)\n",
+          c->checks_by_nnf,
+          c->pivots_by_nnf,
+          c->checks_by_nnf > 0
+            ? 100.0 * (double)c->pivots_by_nnf / (double)c->checks_by_nnf
+            : 0.0);
+
+  DDSPDestroy(c->inner);
+  free(c);
+  free(self);
+}
+
+static DDStatePivot AdaptiveSpecCreate(DDStatePivot inner,
+                                       void* ida_mem,
+                                       FILE* stats_file)
+{
+  AdaptiveSpecContent* content = malloc(sizeof(*content));
+  if (content == NULL) { return NULL; }
+
+  content->inner   = inner;
+  content->ida_mem = ida_mem;
+
+  content->stats_file     = stats_file;
+  content->prev_netf      = 0;
+  content->prev_ncfn      = 0;
+  content->prev_nnf       = 0;
+  content->pivot_num      = 0;
+  content->check_num      = 0;
+  content->piv_call_count = 0;
+  content->checks_by_netf = 0;
+  content->checks_by_ncfn = 0;
+  content->checks_by_nnf  = 0;
+  content->pivots_by_netf = 0;
+  content->pivots_by_ncfn = 0;
+  content->pivots_by_nnf  = 0;
+
+  DDStatePivot sp = DDSPNewEmpty();
+  if (sp == NULL)
+  {
+    DDSPDestroy(content->inner);
+    free(content);
+    return NULL;
+  }
+
+  sp->content      = content;
+  sp->ops->update  = AdaptiveSpecUpdate;
+  sp->ops->destroy = AdaptiveSpecDestroy;
+
+  return sp;
+}
+
 int main(int argc, char* argv[])
 {
   enum
@@ -81,7 +235,7 @@ int main(int argc, char* argv[])
   /* Allocate state and Jacobian data. */
   SUNMatrix J0 = SUNDenseMatrix(si->N, si->N, sunctx);
   TEST_ASSERT(J0);
-  PIVMatrix pJ0 = PIVMatWrapDense(J0);
+  DDStagedPivotMatrix pJ0 = DDStagedPivotMatWrapDense(J0);
   TEST_ASSERT(pJ0);
   N_Vector Y = N_VNew_Serial(N, sunctx);
   TEST_ASSERT(Y);
@@ -97,18 +251,19 @@ int main(int argc, char* argv[])
   sunrealtype theta0 = SUN_RCONST(PI) / FIVE + SUN_RCONST(PI) / TWO;
   PendulumY0(data, theta0, Y);
 
-  /* Create pivot memory and compute initial spec. */
-  PIVMem pm = PIVCreate(sunctx, si, pJ0, PendulumJacf0);
-  TEST_ASSERT(pm);
-  TEST_ASSERT(PIVSetUserData(pm, data) == SUN_SUCCESS);
+  /* Create pivot policy and compute initial spec. */
+  DDStatePivot inner = DDSPStaged(sunctx, si, pJ0, PendulumJacf0, ZERO);
+  TEST_ASSERT(inner != NULL);
+
+  uint8_t spec[si->N];
   sunbooleantype spec_changed;
-  TEST_ASSERT(PIVPivot(pm, ZERO, t0, Y, &spec_changed) == SUN_SUCCESS);
+  TEST_ASSERT(DDSPUpdate(inner, t0, Y, data, spec, &spec_changed) >= 0);
 
   /* Create solver session. */
   DDMem dd_mem = DDCreate(sunctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(DDInit(dd_mem, si, PendulumRes, pm->spec, t0, Y) == IDA_SUCCESS);
+  TEST_ASSERT(DDInit(dd_mem, si, PendulumRes, spec, t0, Y) == IDA_SUCCESS);
 
   TEST_ASSERT(DDSetUserData(dd_mem, data) == IDA_SUCCESS);
 
@@ -182,89 +337,30 @@ int main(int argc, char* argv[])
   TEST_ASSERT(stats_file);
 
   /* Solve and output solution. */
-  fprintf(file, "t,x,y,λ,ΔL,p\n"); /* print header */
+  fprintf(file, "t,x,y,λ,ΔL\n"); /* print header */
 
   void* ida_mem = DDGetIDAMem(dd_mem);
 
-  long int prev_netf, prev_ncfn, prev_nnf;
-  TEST_ASSERT(IDAGetNumErrTestFails(ida_mem, &prev_netf) == IDA_SUCCESS);
-  TEST_ASSERT(IDAGetNumStepSolveFails(ida_mem, &prev_ncfn) == IDA_SUCCESS);
-  TEST_ASSERT(IDAGetNumNonlinSolvConvFails(ida_mem, &prev_nnf) == IDA_SUCCESS);
+  DDStatePivot sp = AdaptiveSpecCreate(inner, ida_mem, stats_file);
+  TEST_ASSERT(sp != NULL);
+  TEST_ASSERT(DDSetStatePivot(dd_mem, sp) == SUN_SUCCESS);
 
   int flag      = IDA_SUCCESS;
   sunrealtype t = t0;
   sunrealtype tret;
-  int pivot_num      = 0;
-  int check_num      = 0;
-  int piv_call_count = 0;
-
-  /* Per-trigger bookkeeping: how often each failure counter was the one
-   * that grew (checks_by_*), and how often it grew on a check that turned
-   * out to produce a real spec change (pivots_by_*). A single check/pivot
-   * can be attributed to more than one trigger if several counters grew in
-   * the same step. */
-  int checks_by_netf = 0, checks_by_ncfn = 0, checks_by_nnf = 0;
-  int pivots_by_netf = 0, pivots_by_ncfn = 0, pivots_by_nnf = 0;
 
   while (flag != IDA_TSTOP_RETURN)
   {
-    spec_changed = SUNFALSE;
-
-    long int netf, ncfn, nnf;
-    TEST_ASSERT(IDAGetNumErrTestFails(ida_mem, &netf) == IDA_SUCCESS);
-    TEST_ASSERT(IDAGetNumStepSolveFails(ida_mem, &ncfn) == IDA_SUCCESS);
-    TEST_ASSERT(IDAGetNumNonlinSolvConvFails(ida_mem, &nnf) == IDA_SUCCESS);
-    sunbooleantype trig_netf = netf > prev_netf;
-    sunbooleantype trig_ncfn = ncfn > prev_ncfn;
-    sunbooleantype trig_nnf  = nnf > prev_nnf;
-    sunbooleantype trouble   = trig_netf || trig_ncfn || trig_nnf;
-    prev_netf                = netf;
-    prev_ncfn                = ncfn;
-    prev_nnf                 = nnf;
-
-    if (trouble)
-    {
-      check_num++;
-      piv_call_count++;
-      checks_by_netf += trig_netf ? 1 : 0;
-      checks_by_ncfn += trig_ncfn ? 1 : 0;
-      checks_by_nnf += trig_nnf ? 1 : 0;
-
-      TEST_ASSERT(PIVPivot(pm, ZERO, t, Y, &spec_changed) == SUN_SUCCESS);
-      fprintf(stats_file,
-              "# check %d at t=%.6f (trigger: netf=%d ncfn=%d nnf=%d, "
-              "spec_changed=%d)\n",
-              check_num,
-              (double)t,
-              trig_netf ? 1 : 0,
-              trig_ncfn ? 1 : 0,
-              trig_nnf ? 1 : 0,
-              spec_changed ? 1 : 0);
-
-      if (spec_changed)
-      {
-        pivot_num++;
-        pivots_by_netf += trig_netf ? 1 : 0;
-        pivots_by_ncfn += trig_ncfn ? 1 : 0;
-        pivots_by_nnf += trig_nnf ? 1 : 0;
-        fprintf(stats_file, "# pivot %d at t=%.6f\n", pivot_num, (double)t);
-        TEST_ASSERT(IDAPrintAllStats(ida_mem, stats_file, SUN_OUTPUTFORMAT_TABLE) ==
-                    IDA_SUCCESS);
-        TEST_ASSERT(DDSetSpec(dd_mem, pm->spec) == SUN_SUCCESS);
-      }
-    }
-
     const sunrealtype x = P_Ith(Y, 0, 0), y = P_Ith(Y, 1, 0),
                       lam = P_Ith(Y, 2, 0);
 
     fprintf(file,
-            "%.20f,%.20f,%.20f,%.20f,%.20f,%d\n",
+            "%.20f,%.20f,%.20f,%.20f,%.20f\n",
             t,
             x,
             y,
             lam,
-            x * x + y * y - l * l,
-            spec_changed ? 1 : 0);
+            x * x + y * y - l * l);
 
     t += tstep;
 
@@ -272,34 +368,10 @@ int main(int argc, char* argv[])
     TEST_ASSERT(flag >= 0);
   }
 
-  fprintf(stats_file, "# total PIVPivot calls: %d\n", piv_call_count);
-  fprintf(stats_file, "# total pivots: %d\n", pivot_num);
-  fprintf(stats_file, "# trigger breakdown (checks -> pivots, precision):\n");
-  fprintf(stats_file,
-          "#   netf: %d -> %d (%.1f%%)\n",
-          checks_by_netf,
-          pivots_by_netf,
-          checks_by_netf > 0
-            ? 100.0 * (double)pivots_by_netf / (double)checks_by_netf
-            : 0.0);
-  fprintf(stats_file,
-          "#   ncfn: %d -> %d (%.1f%%)\n",
-          checks_by_ncfn,
-          pivots_by_ncfn,
-          checks_by_ncfn > 0
-            ? 100.0 * (double)pivots_by_ncfn / (double)checks_by_ncfn
-            : 0.0);
-  fprintf(stats_file,
-          "#   nnf : %d -> %d (%.1f%%)\n",
-          checks_by_nnf,
-          pivots_by_nnf,
-          checks_by_nnf > 0 ? 100.0 * (double)pivots_by_nnf / (double)checks_by_nnf
-                            : 0.0);
-
   /* Cleanup */
   DDFree(&dd_mem);
-  PIVDestroy(&pm);
-  PIVMatDestroy(pJ0);
+  DDSPDestroy(sp);
+  DDStagedPivotMatDestroy(pJ0);
   N_VDestroy(Y);
   DDStaticInfoDestroy(si);
   SUNContext_Free(&sunctx);

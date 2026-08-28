@@ -10,9 +10,9 @@
 #include <sunmatrix/sunmatrix_dense.h>
 
 #include "dd.h"
-#include "matrix.h"
+#include "dd_staged_pivot.h"
+#include "dd_staged_pivot_matrix.h"
 #include "models.h"
-#include "pivot.h"
 #include "static_info.h"
 #include "sundials/sundials_types.h"
 #include "sunmatrix/sunmatrix_sparse.h"
@@ -61,7 +61,7 @@ int main(int argc, char* argv[])
   SUNMatrix J0 = SUNDenseMatrix(si->N, si->N, sunctx);
   TEST_ASSERT(J0);
 
-  PIVMatrix pJ0 = PIVMatWrapDense(J0);
+  DDStagedPivotMatrix pJ0 = DDStagedPivotMatWrapDense(J0);
   TEST_ASSERT(pJ0);
   N_Vector Y = N_VNew_Serial(N, sunctx);
   TEST_ASSERT(Y);
@@ -88,19 +88,20 @@ int main(int argc, char* argv[])
     N_VConst(SUN_RCONST(0.0), YS[i]);
   }
 
-  /* Create pivot memory and compute initial spec. */
-  PIVMem pm = PIVCreate(sunctx, si, pJ0, LotkaVolterraJacf0);
-  TEST_ASSERT(pm);
-  TEST_ASSERT(PIVSetUserData(pm, &p) == SUN_SUCCESS);
+  /* Create pivot policy and compute initial spec. */
+  DDStatePivot sp = DDSPStaged(sunctx, si, pJ0, LotkaVolterraJacf0, ZERO);
+  TEST_ASSERT(sp != NULL);
+
+  uint8_t spec[si->N];
   sunbooleantype spec_changed;
-  TEST_ASSERT(PIVPivot(pm, ZERO, t0, Y, &spec_changed) == SUN_SUCCESS);
+  TEST_ASSERT(DDSPUpdate(sp, t0, Y, &p, spec, &spec_changed) >= 0);
 
   /* Create solver session. */
   DDMem dd_mem = DDCreate(sunctx);
   TEST_ASSERT(dd_mem);
 
-  TEST_ASSERT(DDInit(dd_mem, si, LotkaVolterraRes, pm->spec, t0, Y) ==
-              IDA_SUCCESS);
+  TEST_ASSERT(DDInit(dd_mem, si, LotkaVolterraRes, spec, t0, Y) == IDA_SUCCESS);
+  TEST_ASSERT(DDSetStatePivot(dd_mem, sp) == SUN_SUCCESS);
 
   TEST_ASSERT(
     DDSensInit(dd_mem, LOTKA_VOLTERRA_NP, IDA_STAGGERED, LotkaVolterraResS, YS) ==
@@ -173,7 +174,7 @@ int main(int argc, char* argv[])
   TEST_ASSERT(res);
 
   /* Solve and output solution. */
-  fprintf(res, "t,x,y,x(a),y(a),x(b),y(b),x(c),y(c),x(d),y(d),p\n");
+  fprintf(res, "t,x,y,x(a),y(a),x(b),y(b),x(c),y(c),x(d),y(d)\n");
 
   int sr           = IDA_SUCCESS;
   sunrealtype tout = t0;
@@ -181,12 +182,6 @@ int main(int argc, char* argv[])
 
   while (sr != IDA_TSTOP_RETURN)
   {
-    TEST_ASSERT(PIVPivot(pm, ZERO, tout, Y, &spec_changed) == SUN_SUCCESS);
-    if (spec_changed)
-    {
-      TEST_ASSERT(DDSetSpec(dd_mem, pm->spec) == SUN_SUCCESS);
-    }
-
     const sunrealtype x = LV_Ith(Y, 0, 0), y = LV_Ith(Y, 1, 0);
     const sunrealtype xS[] = {LV_Ith(YS[0], 0, 0),
                               LV_Ith(YS[1], 0, 0),
@@ -199,7 +194,7 @@ int main(int argc, char* argv[])
 
     fprintf(res,
             "%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%.20f,%."
-            "20f%d\n",
+            "20f\n",
             tout,
             x,
             y,
@@ -210,8 +205,7 @@ int main(int argc, char* argv[])
             xS[2],
             yS[2],
             xS[3],
-            yS[3],
-            spec_changed ? 1 : 0);
+            yS[3]);
 
     tout += SUN_RCONST(0.1);
     sr = DDSolve(dd_mem, tout, &tret, Y, IDA_NORMAL);
@@ -222,8 +216,8 @@ int main(int argc, char* argv[])
 
   /* Cleanup */
   DDFree(&dd_mem);
-  PIVDestroy(&pm);
-  PIVMatDestroy(pJ0);
+  DDSPDestroy(sp);
+  DDStagedPivotMatDestroy(pJ0);
   N_VDestroy(Y);
   N_VDestroyVectorArray(YS, LOTKA_VOLTERRA_NP);
   DDStaticInfoDestroy(si);
