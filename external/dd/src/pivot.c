@@ -189,8 +189,7 @@ SUNErrCode PIVPivot(PIVMem pm,
 
   PDReset(pm);
 
-  SUNAssert(pm->jacfn0(t, Y, PIVMatGetSUNMat(pm->J_0), pm->user_data) >= 0,
-            SUN_ERR_OP_FAIL);
+  SUNCheckCall(pm->jacfn0(t, Y, PIVMatGetSUNMat(pm->J_0), pm->user_data));
 
   for (uint8_t k = 0; k < si->K; ++k)
   {
