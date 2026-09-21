@@ -20,6 +20,7 @@ set(dd_SOURCES
     dd.c)
 
 set(dd_HEADERS
+    macros.h
     alg.h
     darr.h
     dd_math.h
